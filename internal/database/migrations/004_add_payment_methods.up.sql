@@ -18,6 +18,6 @@ CREATE TABLE IF NOT EXISTS payment_methods (
     updated_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_payment_methods_customer ON payment_methods(customer_id);
-CREATE INDEX idx_payment_methods_merchant ON payment_methods(merchant_id);
-CREATE INDEX idx_payment_methods_fingerprint ON payment_methods(fingerprint);
+CREATE INDEX IF NOT EXISTS idx_payment_methods_customer ON payment_methods(customer_id);
+CREATE INDEX IF NOT EXISTS idx_payment_methods_merchant ON payment_methods(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_payment_methods_fingerprint ON payment_methods(fingerprint);

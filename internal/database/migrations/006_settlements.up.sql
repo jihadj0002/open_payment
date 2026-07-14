@@ -13,5 +13,5 @@ CREATE TABLE IF NOT EXISTS settlements (
     created_at      TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_settlements_merchant ON settlements(merchant_id);
-CREATE INDEX idx_settlements_status ON settlements(status);
+CREATE INDEX IF NOT EXISTS idx_settlements_merchant ON settlements(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_settlements_status ON settlements(status);

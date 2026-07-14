@@ -19,5 +19,5 @@ CREATE TABLE IF NOT EXISTS fraud_configs (
     updated_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_fraud_checks_payment ON fraud_checks(payment_intent_id);
-CREATE INDEX idx_fraud_checks_merchant ON fraud_checks(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_fraud_checks_payment ON fraud_checks(payment_intent_id);
+CREATE INDEX IF NOT EXISTS idx_fraud_checks_merchant ON fraud_checks(merchant_id);

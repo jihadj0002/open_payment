@@ -107,11 +107,11 @@ CREATE TABLE IF NOT EXISTS api_keys (
     created_at          TIMESTAMPTZ NOT NULL DEFAULT NOW()
 );
 
-CREATE INDEX idx_payment_intents_merchant ON payment_intents(merchant_id);
-CREATE INDEX idx_payment_intents_status ON payment_intents(status);
-CREATE INDEX idx_payment_intents_idempotency ON payment_intents(idempotency_key);
-CREATE INDEX idx_transactions_payment_intent ON transactions(payment_intent_id);
-CREATE INDEX idx_transactions_merchant ON transactions(merchant_id);
-CREATE INDEX idx_ledger_merchant ON ledger_entries(merchant_id);
-CREATE INDEX idx_webhook_deliveries_status ON webhook_deliveries(status);
-CREATE INDEX idx_api_keys_key_hash ON api_keys(key_hash);
+CREATE INDEX IF NOT EXISTS idx_payment_intents_merchant ON payment_intents(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_payment_intents_status ON payment_intents(status);
+CREATE INDEX IF NOT EXISTS idx_payment_intents_idempotency ON payment_intents(idempotency_key);
+CREATE INDEX IF NOT EXISTS idx_transactions_payment_intent ON transactions(payment_intent_id);
+CREATE INDEX IF NOT EXISTS idx_transactions_merchant ON transactions(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_ledger_merchant ON ledger_entries(merchant_id);
+CREATE INDEX IF NOT EXISTS idx_webhook_deliveries_status ON webhook_deliveries(status);
+CREATE INDEX IF NOT EXISTS idx_api_keys_key_hash ON api_keys(key_hash);
