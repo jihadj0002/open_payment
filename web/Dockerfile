@@ -1,16 +1,16 @@
-FROM node:20-alpine AS deps
+FROM node:20-alpine AS base
 WORKDIR /app
-COPY package.json package-lock.json* ./
-RUN npm ci --omit=dev
 
-FROM node:20-alpine AS builder
-WORKDIR /app
+FROM base AS deps
+COPY package.json package-lock.json* ./
+RUN npm ci
+
+FROM base AS builder
 COPY --from=deps /app/node_modules ./node_modules
 COPY . .
 RUN npm run build
 
-FROM node:20-alpine AS runner
-WORKDIR /app
+FROM base AS runner
 RUN addgroup --system --gid 1001 nodejs && \
     adduser --system --uid 1001 nextjs
 
