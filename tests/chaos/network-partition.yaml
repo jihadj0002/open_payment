@@ -1,0 +1,22 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: payment-db-partition
+  namespace: openpayment
+spec:
+  action: partition
+  mode: all
+  selector:
+    namespaces:
+      - openpayment
+    labelSelectors:
+      app: openpayment-api
+  direction: both
+  target:
+    mode: all
+    selector:
+      namespaces:
+        - openpayment
+      labelSelectors:
+        app: postgres
+  duration: '30s'

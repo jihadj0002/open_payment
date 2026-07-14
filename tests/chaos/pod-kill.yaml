@@ -1,0 +1,16 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: payment-api-pod-kill
+  namespace: openpayment
+spec:
+  action: pod-kill
+  mode: one
+  selector:
+    namespaces:
+      - openpayment
+    labelSelectors:
+      app: openpayment-api
+  duration: '60s'
+  scheduler:
+    cron: '@every 5m'

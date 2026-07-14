@@ -1,0 +1,2 @@
+# k6 can push metrics to Prometheus via this config
+# Run: k6 run --out output-prometheus-remote script.js

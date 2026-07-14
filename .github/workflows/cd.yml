@@ -1,0 +1,41 @@
+name: CD
+
+on:
+  push:
+    branches: [main]
+
+jobs:
+  docker-build-and-push:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Set up Docker Buildx
+        uses: docker/setup-buildx-action@v3
+      - name: Login to DockerHub
+        uses: docker/login-action@v3
+        with:
+          username: ${{ secrets.DOCKER_USERNAME }}
+          password: ${{ secrets.DOCKER_PASSWORD }}
+      - name: Build and push backend
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/open-payment-gateway:latest
+            ${{ secrets.DOCKER_USERNAME }}/open-payment-gateway:${{ github.sha }}
+      - name: Build and push mock-processor
+        uses: docker/build-push-action@v6
+        with:
+          context: ./mock-processor
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/open-payment-mock-processor:latest
+      - name: Build and push frontend
+        uses: docker/build-push-action@v6
+        with:
+          context: ./web
+          push: true
+          tags: |
+            ${{ secrets.DOCKER_USERNAME }}/open-payment-web:latest
+            ${{ secrets.DOCKER_USERNAME }}/open-payment-web:${{ github.sha }}

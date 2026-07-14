@@ -34,6 +34,12 @@ async function request<T>(
   })
 
   if (!response.ok) {
+    if (response.status === 401) {
+      localStorage.removeItem('auth_token')
+      if (typeof window !== 'undefined') {
+        window.location.href = '/login'
+      }
+    }
     const error: APIError = await response.json().catch(() => ({
       error: 'UnknownError',
       message: 'An unexpected error occurred',

@@ -13,12 +13,14 @@ import (
 	"github.com/openpayment/gateway/internal/config"
 	"github.com/openpayment/gateway/internal/database"
 	"github.com/openpayment/gateway/internal/pkg/logger"
+	"github.com/openpayment/gateway/internal/service/admin"
 	"github.com/openpayment/gateway/internal/service/auth"
 	"github.com/openpayment/gateway/internal/service/customer"
 	"github.com/openpayment/gateway/internal/service/fraud"
 	"github.com/openpayment/gateway/internal/service/ledger"
 	"github.com/openpayment/gateway/internal/service/merchant"
 	"github.com/openpayment/gateway/internal/service/payment"
+	"github.com/openpayment/gateway/internal/service/settlement"
 	"github.com/openpayment/gateway/internal/service/webhook"
 )
 
@@ -65,6 +67,14 @@ func main() {
 	fraudRepo := fraud.NewRepository(db)
 	fraudSvc := fraud.NewService(fraudRepo)
 	fraud.RegisterFraudRoutes(router, fraudSvc, auth.AuthMiddleware(authSvc))
+
+	adminRepo := admin.NewRepository(db)
+	adminSvc := admin.NewService(adminRepo)
+	admin.RegisterAdminRoutes(router, adminSvc, auth.AuthMiddleware(authSvc))
+
+	settlementRepo := settlement.NewRepository(db)
+	settlementSvc := settlement.NewService(settlementRepo, ledgerSvc)
+	settlement.RegisterSettlementRoutes(router, settlementSvc, auth.AuthMiddleware(authSvc))
 
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.Port),

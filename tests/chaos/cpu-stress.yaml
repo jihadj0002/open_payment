@@ -1,0 +1,19 @@
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: payment-api-cpu-stress
+  namespace: openpayment
+spec:
+  mode: one
+  selector:
+    namespaces:
+      - openpayment
+    labelSelectors:
+      app: openpayment-api
+  stressors:
+    cpu:
+      workers: 1
+      load: 80
+  duration: '120s'
+  scheduler:
+    cron: '@every 15m'

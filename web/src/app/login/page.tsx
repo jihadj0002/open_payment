@@ -1,9 +1,13 @@
 'use client'
 
+import { useState } from 'react'
 import Link from 'next/link'
+import { useRouter } from 'next/navigation'
 import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
+import { useAuth } from '@/context/AuthContext'
+import { Loader2 } from 'lucide-react'
 
 const loginSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -13,6 +17,11 @@ const loginSchema = z.object({
 type LoginForm = z.infer<typeof loginSchema>
 
 export default function LoginPage() {
+  const router = useRouter()
+  const { login } = useAuth()
+  const [error, setError] = useState('')
+  const [isSubmitting, setIsSubmitting] = useState(false)
+
   const {
     register,
     handleSubmit,
@@ -21,8 +30,18 @@ export default function LoginPage() {
     resolver: zodResolver(loginSchema),
   })
 
-  const onSubmit = (data: LoginForm) => {
-    console.log('Login:', data)
+  const onSubmit = async (data: LoginForm) => {
+    setError('')
+    setIsSubmitting(true)
+    try {
+      await login(data.email, data.password)
+      router.push('/dashboard')
+    } catch (err: unknown) {
+      const e = err as { message?: string }
+      setError(e.message || 'Login failed. Please try again.')
+    } finally {
+      setIsSubmitting(false)
+    }
   }
 
   return (
@@ -32,6 +51,12 @@ export default function LoginPage() {
         <p className="mt-2 text-sm text-slate-400">
           Enter your credentials to access your dashboard
         </p>
+
+        {error && (
+          <div className="mt-4 rounded-lg bg-danger/10 border border-danger/20 px-4 py-3 text-sm text-danger">
+            {error}
+          </div>
+        )}
 
         <form onSubmit={handleSubmit(onSubmit)} className="mt-8 space-y-5">
           <div>
@@ -68,9 +93,14 @@ export default function LoginPage() {
 
           <button
             type="submit"
-            className="w-full rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
+            disabled={isSubmitting}
+            className="flex w-full items-center justify-center rounded-lg bg-primary px-4 py-2.5 text-sm font-medium text-white hover:bg-primary-700 transition-colors disabled:opacity-50"
           >
-            Sign in
+            {isSubmitting ? (
+              <Loader2 className="h-4 w-4 animate-spin" />
+            ) : (
+              'Sign in'
+            )}
           </button>
         </form>
 

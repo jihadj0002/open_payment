@@ -1,0 +1,9 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: openpayment-config
+  namespace: openpayment
+data:
+  PORT: "8080"
+  LOG_LEVEL: "info"
+  ENVIRONMENT: "production"

@@ -16,11 +16,11 @@ var supportedCurrencies = map[string]bool{
 }
 
 type Service struct {
-	repo      *Repository
-	processor *ProcessorClient
+	repo      PaymentRepository
+	processor Processor
 }
 
-func NewService(repo *Repository, processor *ProcessorClient) *Service {
+func NewService(repo PaymentRepository, processor Processor) *Service {
 	return &Service{
 		repo:      repo,
 		processor: processor,
