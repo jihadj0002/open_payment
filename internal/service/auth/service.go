@@ -62,7 +62,8 @@ func GenerateAPIKey(prefix string, isLive bool) (string, string) {
 
 	fullPrefix := prefix + mode + "_"
 
-	b := make([]byte, 32)
+	// 28 bytes = 56 hex chars, + 8 prefix = 64 chars (fits VARCHAR(64))
+	b := make([]byte, 28)
 	rand.Read(b)
 	key := fullPrefix + hex.EncodeToString(b)
 
