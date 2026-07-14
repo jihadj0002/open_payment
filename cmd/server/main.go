@@ -6,6 +6,7 @@ import (
 	"os"
 	"os/signal"
 	"syscall"
+	"time"
 
 	"github.com/rs/zerolog/log"
 
@@ -31,13 +32,22 @@ func main() {
 
 	log.Info().Str("port", cfg.Port).Msg("Starting Open Payment Gateway...")
 
-	db, err := database.NewPostgres(cfg.DatabaseURL)
+	var db *database.PostgresDB
+	var err error
+	for i := 0; i < 30; i++ {
+		db, err = database.NewPostgres(cfg.DatabaseURL)
+		if err == nil {
+			break
+		}
+		log.Warn().Err(err).Int("attempt", i+1).Msg("waiting for database...")
+		time.Sleep(2 * time.Second)
+	}
 	if err != nil {
-		log.Fatal().Err(err).Msg("failed to connect to database")
+		log.Fatal().Err(err).Msg("failed to connect to database after 30 attempts")
 	}
 	defer db.Close()
 
-	if err := database.RunMigrations(db, "internal/database/migrations"); err != nil {
+	if err := database.RunMigrations(db); err != nil {
 		log.Fatal().Err(err).Msg("failed to run migrations")
 	}
 

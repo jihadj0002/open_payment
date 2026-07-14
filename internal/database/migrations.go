@@ -2,19 +2,21 @@ package database
 
 import (
 	"context"
+	"embed"
 	"fmt"
-	"os"
-	"path/filepath"
 	"sort"
 	"strings"
 
 	"github.com/rs/zerolog/log"
 )
 
-func RunMigrations(db *PostgresDB, migrationsDir string) error {
-	entries, err := os.ReadDir(migrationsDir)
+//go:embed migrations/*.up.sql migrations/*.down.sql
+var migrationFiles embed.FS
+
+func RunMigrations(db *PostgresDB) error {
+	entries, err := migrationFiles.ReadDir("migrations")
 	if err != nil {
-		return fmt.Errorf("reading migrations directory: %w", err)
+		return fmt.Errorf("reading embedded migrations: %w", err)
 	}
 
 	var upFiles []string
@@ -26,8 +28,7 @@ func RunMigrations(db *PostgresDB, migrationsDir string) error {
 	sort.Strings(upFiles)
 
 	for _, f := range upFiles {
-		path := filepath.Join(migrationsDir, f)
-		content, err := os.ReadFile(path)
+		content, err := migrationFiles.ReadFile("migrations/" + f)
 		if err != nil {
 			return fmt.Errorf("reading migration %s: %w", f, err)
 		}
