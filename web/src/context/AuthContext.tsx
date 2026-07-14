@@ -2,6 +2,16 @@
 import { createContext, useContext, useState, useEffect, ReactNode, useCallback } from 'react'
 import { api } from '@/lib/api'
 
+interface MerchantProfile {
+  id: string
+  name: string
+  email: string
+  webhook_url?: string
+  status: string
+  created_at: string
+  updated_at: string
+}
+
 interface User {
   merchant_id: string
   role: string
@@ -28,8 +38,15 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     const storedToken = localStorage.getItem('auth_token')
     if (storedToken) {
       setToken(storedToken)
-      api.get<User>('/merchants/profile')
-        .then((res) => setUser(res.data))
+      api.get<MerchantProfile>('/merchants/profile')
+        .then((res) => {
+          const m = res.data
+          setUser({
+            merchant_id: m.id,
+            role: 'merchant',
+            permissions: ['read', 'write'],
+          })
+        })
         .catch(() => {
           localStorage.removeItem('auth_token')
           setToken(null)
