@@ -1,0 +1,13 @@
+.git/
+.gitignore
+docs/
+node_modules/
+web/node_modules/
+web/.next/
+web/out/
+*.md
+bin/
+coverage.out
+.env
+tmp/
+.infra/

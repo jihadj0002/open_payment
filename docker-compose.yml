@@ -65,11 +65,11 @@ services:
       ZOOKEEPER_CLIENT_PORT: 2181
       ZOOKEEPER_TICK_TIME: 2000
 
-volumes:
-  pgdata:
-
   mock-processor:
     build: ./mock-processor
     ports:
       - "9000:9000"
     restart: unless-stopped
+
+volumes:
+  pgdata:

@@ -1,7 +1,7 @@
-FROM golang:1.22-alpine AS builder
+FROM golang:1.25-alpine AS builder
 
 WORKDIR /app
-COPY main.go .
+COPY go.mod main.go .
 RUN CGO_ENABLED=0 GOOS=linux go build -o /app/bin/mock-processor .
 
 FROM alpine:3.19
