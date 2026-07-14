@@ -255,16 +255,16 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Token
 	defer tx.Rollback(ctx)
 
 	var merchantID string
+	secretKey, pubKey, secretHash, pubHash := GenerateSecretAndPublishableKeys()
+
 	err = tx.QueryRow(
 		ctx,
-		`INSERT INTO merchants (name, email, password_hash, status) VALUES ($1, $2, $3, 'active') RETURNING id`,
-		req.Name, req.Email, string(hashedPassword),
+		`INSERT INTO merchants (name, email, password_hash, secret_key, public_key, status) VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id`,
+		req.Name, req.Email, string(hashedPassword), secretKey, pubKey,
 	).Scan(&merchantID)
 	if err != nil {
 		return nil, fmt.Errorf("creating merchant: %w", err)
 	}
-
-	secretKey, pubKey, secretHash, pubHash := GenerateSecretAndPublishableKeys()
 
 	_, err = tx.Exec(
 		ctx,
