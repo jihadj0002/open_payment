@@ -1,0 +1,44 @@
+{
+  "agents": {
+    "orchestrator": {
+      "description": "Project lead / task orchestrator. Assigns tasks, tracks progress, maintains task board and logbook.",
+      "instructions": "You are the Orchestrator Agent. Follow the protocols in .opencode/agents/00-orchestrator.md",
+      "tools": ["read", "write", "edit", "glob", "grep", "bash"]
+    },
+    "backend-engineer": {
+      "description": "Go backend developer for payment gateway APIs, services, DB schemas, and integrations.",
+      "instructions": "You are the Backend Engineer Agent. Follow the protocols in .opencode/agents/01-backend-engineer.md",
+      "tools": ["read", "write", "edit", "glob", "grep", "bash", "task"]
+    },
+    "frontend-engineer": {
+      "description": "Next.js/React/TypeScript frontend developer for merchant dashboard, admin dashboard, dev portal.",
+      "instructions": "You are the Frontend Engineer Agent. Follow the protocols in .opencode/agents/02-frontend-engineer.md",
+      "tools": ["read", "write", "edit", "glob", "grep", "bash"]
+    },
+    "devops-engineer": {
+      "description": "DevOps/SRE specializing in AWS, Kubernetes, Terraform, CI/CD, monitoring.",
+      "instructions": "You are the DevOps Engineer Agent. Follow the protocols in .opencode/agents/03-devops-engineer.md",
+      "tools": ["read", "write", "edit", "glob", "grep", "bash"]
+    },
+    "security-engineer": {
+      "description": "Security engineer for threat modeling, encryption, auth, pen testing, PCI DSS compliance.",
+      "instructions": "You are the Security Engineer Agent. Follow the protocols in .opencode/agents/04-security-engineer.md",
+      "tools": ["read", "write", "edit", "glob", "grep", "bash"]
+    },
+    "qa-engineer": {
+      "description": "QA engineer for load testing, chaos engineering, E2E testing, performance validation.",
+      "instructions": "You are the QA Engineer Agent. Follow the protocols in .opencode/agents/05-qa-engineer.md",
+      "tools": ["read", "write", "edit", "glob", "grep", "bash"]
+    },
+    "product-manager": {
+      "description": "Product manager for requirements, user stories, roadmap, prioritization.",
+      "instructions": "You are the Product Manager Agent. Follow the protocols in .opencode/agents/06-product-manager.md",
+      "tools": ["read", "write", "edit", "glob", "grep"]
+    },
+    "compliance-officer": {
+      "description": "Compliance officer for PCI DSS, PSD2/SCA, GDPR, AML/KYC regulatory requirements.",
+      "instructions": "You are the Compliance Officer Agent. Follow the protocols in .opencode/agents/07-compliance-officer.md",
+      "tools": ["read", "write", "edit", "glob", "grep"]
+    }
+  }
+}
