@@ -21,7 +21,7 @@ func LoginHandler(authService *AuthService) http.HandlerFunc {
 			return
 		}
 
-		tokenPair, err := authService.Login(r.Context(), req.Email, req.Password)
+		result, err := authService.Login(r.Context(), req.Email, req.Password)
 		if err != nil {
 			if err == ErrInvalidCredentials {
 				api.RespondError(w, http.StatusUnauthorized, "auth_error", "invalid_credentials", "invalid email or password")
@@ -31,7 +31,7 @@ func LoginHandler(authService *AuthService) http.HandlerFunc {
 			return
 		}
 
-		api.RespondJSON(w, http.StatusOK, tokenPair)
+		api.RespondJSON(w, http.StatusOK, result)
 	}
 }
 
@@ -48,7 +48,7 @@ func RegisterHandler(authService *AuthService) http.HandlerFunc {
 			return
 		}
 
-		tokenPair, err := authService.Register(r.Context(), req)
+		result, err := authService.Register(r.Context(), req)
 		if err != nil {
 			if err == ErrEmailAlreadyExists {
 				api.RespondError(w, http.StatusConflict, "invalid_request", "email_exists", "a merchant with this email already exists")
@@ -59,7 +59,7 @@ func RegisterHandler(authService *AuthService) http.HandlerFunc {
 			return
 		}
 
-		api.RespondJSON(w, http.StatusCreated, tokenPair)
+		api.RespondJSON(w, http.StatusCreated, result)
 	}
 }
 

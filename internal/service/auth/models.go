@@ -16,6 +16,17 @@ type TokenPair struct {
 	ExpiresIn    int    `json:"expires_in"`
 }
 
+type AuthResponse struct {
+	TokenPair `json:"token_pair"`
+	User      User  `json:"user"`
+}
+
+type User struct {
+	MerchantID  string   `json:"merchant_id"`
+	Role        string   `json:"role"`
+	Permissions []string `json:"permissions"`
+}
+
 type LoginRequest struct {
 	Email    string `json:"email"`
 	Password string `json:"password"`

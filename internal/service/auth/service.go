@@ -199,7 +199,7 @@ func (s *AuthService) ValidateAPIKey(key string) (*Claims, error) {
 	}, nil
 }
 
-func (s *AuthService) Login(ctx context.Context, email, password string) (*TokenPair, error) {
+func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthResponse, error) {
 	var (
 		id           string
 		name         string
@@ -227,14 +227,26 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*Token
 		return nil, ErrInvalidCredentials
 	}
 
-	return s.GenerateTokenPair(Claims{
+	tokenPair, err := s.GenerateTokenPair(Claims{
 		MerchantID:  id,
 		Role:        "merchant",
 		Permissions: []string{"read", "write"},
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthResponse{
+		TokenPair: *tokenPair,
+		User: User{
+			MerchantID:  id,
+			Role:        "merchant",
+			Permissions: []string{"read", "write"},
+		},
+	}, nil
 }
 
-func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*TokenPair, error) {
+func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*AuthResponse, error) {
 	var existingID string
 	err := s.db.QueryRow(ctx, `SELECT id FROM merchants WHERE email = $1`, req.Email).Scan(&existingID)
 	if err == nil {
@@ -292,9 +304,21 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*Token
 	_ = secretKey
 	_ = pubKey
 
-	return s.GenerateTokenPair(Claims{
+	tokenPair, err := s.GenerateTokenPair(Claims{
 		MerchantID:  merchantID,
 		Role:        "merchant",
 		Permissions: []string{"read", "write"},
 	})
+	if err != nil {
+		return nil, err
+	}
+
+	return &AuthResponse{
+		TokenPair: *tokenPair,
+		User: User{
+			MerchantID:  merchantID,
+			Role:        "merchant",
+			Permissions: []string{"read", "write"},
+		},
+	}, nil
 }
