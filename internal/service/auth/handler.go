@@ -5,6 +5,7 @@ import (
 	"net/http"
 
 	"github.com/openpayment/gateway/internal/api"
+	"github.com/rs/zerolog/log"
 )
 
 func LoginHandler(authService *AuthService) http.HandlerFunc {
@@ -53,6 +54,7 @@ func RegisterHandler(authService *AuthService) http.HandlerFunc {
 				api.RespondError(w, http.StatusConflict, "invalid_request", "email_exists", "a merchant with this email already exists")
 				return
 			}
+			log.Error().Err(err).Msg("register failed")
 			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "an unexpected error occurred")
 			return
 		}
