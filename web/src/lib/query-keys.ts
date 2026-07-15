@@ -27,4 +27,10 @@ export const queryKeys = {
   reports: {
     all: ['reports'] as const,
   },
+  fraud: {
+    rules: ['fraud', 'rules'] as const,
+  },
+  onboarding: {
+    status: ['onboarding', 'status'] as const,
+  },
 }

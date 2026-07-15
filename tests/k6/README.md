@@ -1,54 +1,36 @@
-# k6 Load Testing Scripts
+# Load Testing with k6
 
 ## Prerequisites
 
-- [k6](https://k6.io/docs/getting-started/installation/) installed (`brew install k6`, `apt install k6`, etc.)
-- The payment gateway API running locally or on a staging environment
+- Install [k6](https://k6.io/docs/getting-started/installation/)
+- Server running at `http://localhost:8080` (or set `BASE_URL`)
 
-## Scripts
+## Running Tests
 
-| Script | Type | Description |
-|--------|------|-------------|
-| `smoke-test.js` | Smoke | Minimal load (1 VU, 30s) — validates basic functionality |
-| `load-test.js` | Load | Gradual ramp to 100 VUs over 12min — tests normal traffic |
-| `stress-test.js` | Stress | Ramp to 300 VUs over 12min — finds breaking point |
-| `soak-test.js` | Soak | 100 VUs sustained for 60min — detects memory/resource leaks |
-
-## How to Run
-
+### Payment Flow Test (Create → Capture → Refund)
 ```bash
-# Smoke test (default: localhost:8080)
-k6 run tests/k6/smoke-test.js
-
-# Load test
-k6 run tests/k6/load-test.js
-
-# Stress test
-k6 run tests/k6/stress-test.js
-
-# Soak test
-k6 run tests/k6/soak-test.js
+k6 run tests/k6/payment-flow.js
 ```
 
-## Configuration
-
-Override the target URL or API key via environment variables:
-
+### Mixed Workload Test (Payments + Balance + List)
 ```bash
-# Custom target URL
-BASE_URL=http://staging:8080 k6 run tests/k6/load-test.js
-
-# Custom API key
-API_KEY=sk_live_xxxxxxxxxxxxxx k6 run tests/k6/smoke-test.js
+k6 run tests/k6/mixed-workload.js
 ```
+
+### Custom Server / Auth
+```bash
+k6 run -e BASE_URL=http://localhost:8080/v1 -e AUTH_TOKEN=your_token tests/k6/payment-flow.js
+```
+
+## Test Scenarios
+
+| Script | VUs | Duration | Description |
+|--------|-----|----------|-------------|
+| payment-flow.js | 50 ramp → 50 → 0 | 2 min | Login → create payment → capture → refund |
+| mixed-workload.js | 100 ramp → 100 → 0 | 5 min | Mix of create, list, get, balance |
 
 ## Thresholds
 
-| Script | p(95) | p(99) | Failure Rate |
-|--------|-------|-------|--------------|
-| Smoke  | <500ms | —    | <1%          |
-| Load   | <500ms | <1500ms | <1%        |
-| Stress | <1000ms | <3000ms | <5%        |
-| Soak   | <600ms | —    | <2%          |
-
-If a threshold is crossed, k6 exits with a non-zero code and marks the test as failed.
+- p95 response time < 500ms
+- Error rate < 5% (mixed workload)
+- Payment success rate > 99% (payment flow)
