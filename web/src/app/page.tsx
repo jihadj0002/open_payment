@@ -51,7 +51,7 @@ export default function Home() {
           </p>
           <div className="mt-10 flex items-center justify-center gap-4">
             <Link
-              href="/dashboard"
+              href="/merchant/dashboard"
               className="rounded-lg bg-primary px-6 py-3 text-sm font-medium text-white hover:bg-primary-700 transition-colors"
             >
               Get Started

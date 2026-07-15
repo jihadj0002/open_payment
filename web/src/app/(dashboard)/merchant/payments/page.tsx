@@ -4,10 +4,8 @@ import { useState } from 'react'
 import Link from 'next/link'
 import { Plus } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import DashboardLayout from '@/components/layout/DashboardLayout'
 import { DataTable, Column } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/Badge'
-import { toast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query-keys'
 
@@ -79,11 +77,11 @@ export default function PaymentsPage() {
   ]
 
   return (
-    <DashboardLayout>
+    <>
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">Payments</h2>
         <Link
-          href="/payments/new"
+          href="/merchant/payments/new"
           className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
         >
           <Plus className="h-4 w-4" />
@@ -103,6 +101,6 @@ export default function PaymentsPage() {
           onPageChange: setPage,
         }}
       />
-    </DashboardLayout>
+    </>
   )
 }

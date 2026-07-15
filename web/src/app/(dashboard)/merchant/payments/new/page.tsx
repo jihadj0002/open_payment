@@ -6,7 +6,6 @@ import { useForm } from 'react-hook-form'
 import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, CheckCircle, XCircle } from 'lucide-react'
-import DashboardLayout from '@/components/layout/DashboardLayout'
 import { api } from '@/lib/api'
 
 const paymentSchema = z.object({
@@ -38,7 +37,7 @@ export default function NewPaymentPage() {
     try {
       await api.post('/payments', data)
       setResult({ success: true, message: 'Payment created successfully!' })
-      setTimeout(() => router.push('/payments'), 1500)
+      setTimeout(() => router.push('/merchant/payments'), 1500)
     } catch (err: unknown) {
       const e = err as { message?: string }
       setResult({ success: false, message: e.message || 'Payment failed. Please try again.' })
@@ -48,7 +47,7 @@ export default function NewPaymentPage() {
   }
 
   return (
-    <DashboardLayout>
+    <>
       <h2 className="mb-6 text-lg font-semibold text-white">New Payment</h2>
 
       {result && (
@@ -142,6 +141,6 @@ export default function NewPaymentPage() {
           </button>
         </form>
       </div>
-    </DashboardLayout>
+    </>
   )
 }

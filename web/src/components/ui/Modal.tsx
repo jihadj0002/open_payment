@@ -72,10 +72,11 @@ function Modal({ open, onClose, title, children, footer, size = 'md' }: ModalPro
         {title && (
           <div className="flex items-center justify-between border-b border-slate-700 px-6 py-4">
             <h2 className="text-lg font-semibold text-white">{title}</h2>
-            <button
-              onClick={onClose}
-              className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
-            >
+              <button
+                onClick={onClose}
+                aria-label="Close"
+                className="rounded-lg p-1 text-slate-400 transition-colors hover:bg-slate-700 hover:text-white"
+              >
               <X className="h-5 w-5" />
             </button>
           </div>

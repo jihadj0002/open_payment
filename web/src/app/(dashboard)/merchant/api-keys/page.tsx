@@ -3,7 +3,6 @@
 import { useState } from 'react'
 import { Plus, Copy, Check, AlertTriangle, X } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
-import DashboardLayout from '@/components/layout/DashboardLayout'
 import { DataTable, Column } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/Badge'
 import { toast } from '@/components/ui/Toast'
@@ -129,7 +128,7 @@ export default function ApiKeysPage() {
   ]
 
   return (
-    <DashboardLayout>
+    <>
       <div className="mb-6 flex items-center justify-between">
         <h2 className="text-lg font-semibold text-white">API Keys</h2>
         <button
@@ -240,6 +239,6 @@ export default function ApiKeysPage() {
           </div>
         </div>
       )}
-    </DashboardLayout>
+    </>
   )
 }

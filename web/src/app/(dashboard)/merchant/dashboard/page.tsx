@@ -1,11 +1,9 @@
 'use client'
 
 import Link from 'next/link'
-import { ArrowUpRight, ArrowDownRight, DollarSign, Activity, Clock, TrendingUp, RefreshCw } from 'lucide-react'
+import { ArrowUpRight, ArrowDownRight, DollarSign, Activity, Clock, TrendingUp } from 'lucide-react'
 import { useQuery } from '@tanstack/react-query'
-import DashboardLayout from '@/components/layout/DashboardLayout'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { toast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query-keys'
 
@@ -61,30 +59,26 @@ export default function DashboardPage() {
 
   if (loading) {
     return (
-      <DashboardLayout>
-        <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
-          {Array.from({ length: 4 }).map((_, i) => (
-            <Skeleton key={i} variant="card" />
-          ))}
-        </div>
-      </DashboardLayout>
+      <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
+        {Array.from({ length: 4 }).map((_, i) => (
+          <Skeleton key={i} variant="card" />
+        ))}
+      </div>
     )
   }
 
   if (error) {
     return (
-      <DashboardLayout>
-        <div className="flex flex-col items-center justify-center py-20">
-          <p className="mb-4 text-slate-400">Failed to load dashboard data</p>
-        </div>
-      </DashboardLayout>
+      <div className="flex flex-col items-center justify-center py-20">
+        <p className="mb-4 text-slate-400">Failed to load dashboard data</p>
+      </div>
     )
   }
 
   const isAllZero = balance && balance.available === 0 && balance.pending === 0
 
   return (
-    <DashboardLayout>
+    <>
       <div className="grid gap-6 sm:grid-cols-2 lg:grid-cols-4">
         {statsCards.map((stat) => (
           <div
@@ -133,7 +127,7 @@ export default function DashboardPage() {
                       <div className="flex flex-col items-center gap-3">
                         <span>No transactions yet</span>
                         <Link
-                          href="/payments/new"
+                          href="/merchant/payments/new"
                           className="inline-flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
                         >
                           Create your first payment
@@ -169,6 +163,6 @@ export default function DashboardPage() {
           </table>
         </div>
       </div>
-    </DashboardLayout>
+    </>
   )
 }

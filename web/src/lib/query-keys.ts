@@ -6,6 +6,10 @@ export const queryKeys = {
   },
   balance: {
     all: ['balance'] as const,
+    transactions: (params?: Record<string, string>) => ['balance', 'transactions', params] as const,
+  },
+  settlements: {
+    list: (params?: Record<string, string>) => ['settlements', 'list', params] as const,
   },
   apiKeys: {
     all: ['api-keys'] as const,
@@ -13,7 +17,14 @@ export const queryKeys = {
   webhooks: {
     all: ['webhooks'] as const,
   },
+  customers: {
+    list: () => ['customers', 'list'] as const,
+    detail: (id: string) => ['customers', 'detail', id] as const,
+  },
   merchant: {
     profile: ['merchant', 'profile'] as const,
+  },
+  reports: {
+    all: ['reports'] as const,
   },
 }
