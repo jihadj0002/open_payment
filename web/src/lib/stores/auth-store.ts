@@ -2,6 +2,15 @@ import { create } from 'zustand'
 import { persist } from 'zustand/middleware'
 import { api } from '@/lib/api'
 
+function setCookie(name: string, value: string, days = 7) {
+  const expires = new Date(Date.now() + days * 864e5).toUTCString()
+  document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`
+}
+
+function removeCookie(name: string) {
+  document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`
+}
+
 interface User {
   merchant_id: string
   role: string
@@ -34,6 +43,7 @@ export const useAuthStore = create<AuthState>()(
         const res = await api.post<{ token_pair: { access_token: string }; user: User }>('/auth/login', { email, password })
         const token = res.data.token_pair.access_token
         localStorage.setItem('auth_token', token)
+        setCookie('auth_token', token)
         set({ user: res.data.user, token, isAuthenticated: true })
       },
 
@@ -41,11 +51,13 @@ export const useAuthStore = create<AuthState>()(
         const res = await api.post<{ token_pair: { access_token: string }; user: User }>('/auth/register', { name, email, password })
         const token = res.data.token_pair.access_token
         localStorage.setItem('auth_token', token)
+        setCookie('auth_token', token)
         set({ user: res.data.user, token, isAuthenticated: true })
       },
 
       logout: () => {
         localStorage.removeItem('auth_token')
+        removeCookie('auth_token')
         set({ user: null, token: null, isAuthenticated: false })
       },
 
