@@ -7,6 +7,8 @@ import (
 
 	"github.com/go-chi/chi/v5/middleware"
 	"github.com/rs/zerolog/log"
+
+	"github.com/openpayment/gateway/internal/pkg/requestid"
 )
 
 type requestSizeKey struct{}
@@ -16,15 +18,24 @@ func Logger(next http.Handler) http.Handler {
 		start := time.Now()
 		ww := middleware.NewWrapResponseWriter(w, r.ProtoMajor)
 
-		next.ServeHTTP(ww, r)
+		reqID := middleware.GetReqID(r.Context())
+		ctx := requestid.WithContext(r.Context(), reqID)
 
-		log.Logger.Info().
+		logger := log.With().
+			Str("request_id", reqID).
 			Str("method", r.Method).
 			Str("path", r.URL.Path).
+			Logger()
+
+		ctx = logger.WithContext(ctx)
+		r = r.WithContext(ctx)
+
+		next.ServeHTTP(ww, r)
+
+		logger.Info().
 			Int("status", ww.Status()).
 			Int("bytes", ww.BytesWritten()).
 			Dur("duration", time.Since(start)).
-			Str("request_id", middleware.GetReqID(r.Context())).
 			Msg("request completed")
 	})
 }
@@ -46,7 +57,9 @@ func RequestSizeLimiter(maxBytes int64) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			if r.ContentLength > maxBytes {
-				http.Error(w, `{"error":{"type":"request_error","code":"payload_too_large","message":"Request body too large"}}`, http.StatusRequestEntityTooLarge)
+				w.Header().Set("Content-Type", "application/json")
+				w.WriteHeader(http.StatusRequestEntityTooLarge)
+				w.Write([]byte(`{"error":{"type":"request_error","code":"payload_too_large","message":"Request body too large"}}`))
 				return
 			}
 			r.Body = http.MaxBytesReader(w, r.Body, maxBytes)
@@ -62,3 +75,5 @@ func GetMaxRequestSize(ctx context.Context) int64 {
 	}
 	return 0
 }
+
+

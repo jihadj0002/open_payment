@@ -23,8 +23,9 @@ type PaymentIntent struct {
 	ReturnURL        *string           `json:"return_url,omitempty"`
 	ErrorCode        *string           `json:"error_code,omitempty"`
 	ErrorMessage     *string           `json:"error_message,omitempty"`
-	CreatedAt        time.Time         `json:"created_at"`
-	UpdatedAt        time.Time         `json:"updated_at"`
+	CreatedAt        time.Time            `json:"created_at"`
+	UpdatedAt        time.Time            `json:"updated_at"`
+	StatusHistory    []StatusHistoryEntry `json:"status_history,omitempty"`
 }
 
 type Transaction struct {
@@ -41,6 +42,16 @@ type Transaction struct {
 	NetAmount         int64           `json:"net_amount,omitempty"`
 	IdempotencyKey    *string         `json:"idempotency_key,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
+}
+
+type StatusHistoryEntry struct {
+	ID              string    `json:"id"`
+	PaymentIntentID string    `json:"payment_intent_id"`
+	OldStatus       *string   `json:"old_status,omitempty"`
+	NewStatus       string    `json:"new_status"`
+	ChangedBy       string    `json:"changed_by"`
+	Reason          *string   `json:"reason,omitempty"`
+	CreatedAt       time.Time `json:"created_at"`
 }
 
 type CreatePaymentRequest struct {

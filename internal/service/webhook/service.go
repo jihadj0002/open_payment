@@ -81,6 +81,30 @@ func (s *Service) DeleteEndpoint(ctx context.Context, id, merchantID string) err
 	return s.repo.DeleteEndpoint(ctx, id, merchantID)
 }
 
+func (s *Service) RotateSecret(ctx context.Context, id, merchantID string) (*RotateSecretResponse, error) {
+	endpoint, err := s.repo.GetEndpoint(ctx, id, merchantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, errors.New("endpoint not found")
+		}
+		return nil, err
+	}
+
+	newSecret := generateSecret()
+	now := time.Now()
+	expiresAt := now.Add(24 * time.Hour)
+
+	if err := s.repo.RotateSecret(ctx, id, endpoint.Secret, newSecret, expiresAt); err != nil {
+		return nil, fmt.Errorf("rotate secret: %w", err)
+	}
+
+	return &RotateSecretResponse{
+		EndpointID: id,
+		NewSecret:  newSecret,
+		Message:    "new secret generated; previous secret remains valid for 24 hours",
+	}, nil
+}
+
 func (s *Service) DispatchEvent(ctx context.Context, merchantID, eventType string, data interface{}) {
 	endpoints, err := s.repo.GetEndpointsForEvent(ctx, merchantID, eventType)
 	if err != nil || len(endpoints) == 0 {

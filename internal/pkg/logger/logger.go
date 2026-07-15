@@ -1,7 +1,9 @@
 package logger
 
 import (
+	"context"
 	"os"
+	"strings"
 	"time"
 
 	"github.com/rs/zerolog"
@@ -27,4 +29,15 @@ func Init(level string) {
 		Timestamp().
 		Caller().
 		Logger()
+}
+
+func Ctx(ctx context.Context) *zerolog.Logger {
+	return log.Ctx(ctx)
+}
+
+func Redact(s string) string {
+	if len(s) > 6 {
+		return s[:4] + strings.Repeat("*", len(s)-6) + s[len(s)-2:]
+	}
+	return strings.Repeat("*", len(s))
 }

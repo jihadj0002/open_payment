@@ -11,6 +11,7 @@ type PaymentRepository interface {
 	GetByIdempotencyKey(ctx context.Context, key, merchantID string) (*PaymentIntent, error)
 	GetTransactionByIdempotencyKey(ctx context.Context, key, merchantID string) (*Transaction, error)
 	CreateTransaction(ctx context.Context, tx *Transaction) error
+	ListStatusHistory(ctx context.Context, paymentIntentID string) ([]StatusHistoryEntry, error)
 }
 
 type Processor interface {

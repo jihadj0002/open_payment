@@ -88,6 +88,15 @@ func (r *Repository) GetPaymentIntent(ctx context.Context, id, merchantID string
 }
 
 func (r *Repository) UpdatePaymentIntentStatus(ctx context.Context, id, status string) error {
+	return r.updatePaymentIntentStatusWithReason(ctx, id, status, "system", nil)
+}
+
+func (r *Repository) updatePaymentIntentStatusWithReason(ctx context.Context, id, status, changedBy string, reason *string) error {
+	oldStatus, err := r.getPaymentIntentStatus(ctx, id)
+	if err != nil {
+		return err
+	}
+
 	query := `UPDATE payment_intents SET status = $1, updated_at = NOW() WHERE id = $2`
 	result, err := r.Pool.Exec(ctx, query, status, id)
 	if err != nil {
@@ -96,18 +105,81 @@ func (r *Repository) UpdatePaymentIntentStatus(ctx context.Context, id, status s
 	if result.RowsAffected() == 0 {
 		return pkgErr.ErrNotFound
 	}
+
+	if err := r.recordStatusChange(ctx, id, oldStatus, status, changedBy, reason); err != nil {
+		return fmt.Errorf("record status change: %w", err)
+	}
+
 	return nil
 }
 
+func (r *Repository) getPaymentIntentStatus(ctx context.Context, id string) (string, error) {
+	var status string
+	err := r.Pool.QueryRow(ctx, `SELECT status FROM payment_intents WHERE id = $1`, id).Scan(&status)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return "", pkgErr.ErrNotFound
+		}
+		return "", fmt.Errorf("get current status: %w", err)
+	}
+	return status, nil
+}
+
+func (r *Repository) recordStatusChange(ctx context.Context, paymentIntentID, oldStatus, newStatus, changedBy string, reason *string) error {
+	_, err := r.Pool.Exec(ctx,
+		`INSERT INTO status_history (payment_intent_id, old_status, new_status, changed_by, reason) VALUES ($1, $2, $3, $4, $5)`,
+		paymentIntentID, oldStatus, newStatus, changedBy, reason,
+	)
+	return err
+}
+
+func (r *Repository) ListStatusHistory(ctx context.Context, paymentIntentID string) ([]StatusHistoryEntry, error) {
+	rows, err := r.Pool.Query(ctx,
+		`SELECT id, payment_intent_id, old_status, new_status, changed_by, reason, created_at
+		 FROM status_history WHERE payment_intent_id = $1 ORDER BY created_at ASC`,
+		paymentIntentID,
+	)
+	if err != nil {
+		return nil, fmt.Errorf("list status history: %w", err)
+	}
+	defer rows.Close()
+
+	var history []StatusHistoryEntry
+	for rows.Next() {
+		var h StatusHistoryEntry
+		if err := rows.Scan(&h.ID, &h.PaymentIntentID, &h.OldStatus, &h.NewStatus, &h.ChangedBy, &h.Reason, &h.CreatedAt); err != nil {
+			return nil, fmt.Errorf("scan status history: %w", err)
+		}
+		history = append(history, h)
+	}
+	if err := rows.Err(); err != nil {
+		return nil, fmt.Errorf("rows iteration: %w", err)
+	}
+	if history == nil {
+		history = []StatusHistoryEntry{}
+	}
+	return history, nil
+}
+
 func (r *Repository) UpdatePaymentIntentCapture(ctx context.Context, id string, amountCapturable, amountReceived int64, status string) error {
-	query := `UPDATE payment_intents SET status = $1, updated_at = NOW() WHERE id = $2`
-	result, err := r.Pool.Exec(ctx, query, status, id)
+	oldStatus, err := r.getPaymentIntentStatus(ctx, id)
+	if err != nil {
+		return err
+	}
+
+	query := `UPDATE payment_intents SET amount_capturable = $1, amount_received = $2, status = $3, updated_at = NOW() WHERE id = $4`
+	result, err := r.Pool.Exec(ctx, query, amountCapturable, amountReceived, status, id)
 	if err != nil {
 		return fmt.Errorf("update payment intent capture: %w", err)
 	}
 	if result.RowsAffected() == 0 {
 		return pkgErr.ErrNotFound
 	}
+
+	if err := r.recordStatusChange(ctx, id, oldStatus, status, "system", nil); err != nil {
+		return fmt.Errorf("record status change: %w", err)
+	}
+
 	return nil
 }
 

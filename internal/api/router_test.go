@@ -7,15 +7,24 @@ import (
 	"net/http"
 	"net/http/httptest"
 	"testing"
+	"time"
 
+	"github.com/go-chi/chi/v5"
 	"github.com/stretchr/testify/assert"
 
 	"github.com/openpayment/gateway/internal/config"
 )
 
-func TestHealthEndpoint(t *testing.T) {
+func testRouter() *chi.Mux {
 	cfg := config.Load()
-	router := NewRouter(cfg)
+	return NewRouter(cfg, &HealthChecker{
+		Uptime:  time.Now(),
+		Version: "test",
+	})
+}
+
+func TestHealthEndpoint(t *testing.T) {
+	router := testRouter()
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
@@ -30,12 +39,12 @@ func TestHealthEndpoint(t *testing.T) {
 	data, ok := body["data"].(map[string]interface{})
 	assert.True(t, ok)
 	assert.Equal(t, "ok", data["status"])
-	assert.Equal(t, "open-payment-gateway", data["service"])
+	_, hasChecks := data["checks"]
+	assert.True(t, hasChecks)
 }
 
 func TestHealthEndpoint_MethodNotAllowed(t *testing.T) {
-	cfg := config.Load()
-	router := NewRouter(cfg)
+	router := testRouter()
 
 	methods := []string{"POST", "PUT", "PATCH", "DELETE"}
 
@@ -51,8 +60,7 @@ func TestHealthEndpoint_MethodNotAllowed(t *testing.T) {
 }
 
 func TestHealthEndpoint_ContentType(t *testing.T) {
-	cfg := config.Load()
-	router := NewRouter(cfg)
+	router := testRouter()
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
@@ -62,8 +70,7 @@ func TestHealthEndpoint_ContentType(t *testing.T) {
 }
 
 func TestHealthEndpoint_NotFound(t *testing.T) {
-	cfg := config.Load()
-	router := NewRouter(cfg)
+	router := testRouter()
 
 	req := httptest.NewRequest("GET", "/nonexistent", nil)
 	rec := httptest.NewRecorder()
@@ -73,8 +80,7 @@ func TestHealthEndpoint_NotFound(t *testing.T) {
 }
 
 func TestCorsHeaders(t *testing.T) {
-	cfg := config.Load()
-	router := NewRouter(cfg)
+	router := testRouter()
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()
@@ -85,8 +91,7 @@ func TestCorsHeaders(t *testing.T) {
 }
 
 func TestSecurityHeaders(t *testing.T) {
-	cfg := config.Load()
-	router := NewRouter(cfg)
+	router := testRouter()
 
 	req := httptest.NewRequest("GET", "/health", nil)
 	rec := httptest.NewRecorder()

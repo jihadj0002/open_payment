@@ -1,6 +1,7 @@
 package main
 
 import (
+	"context"
 	"fmt"
 	"net/http"
 	"os"
@@ -47,7 +48,7 @@ func main() {
 	var db *database.PostgresDB
 	var err error
 	for i := 0; i < 30; i++ {
-		db, err = database.NewPostgres(cfg.DatabaseURL)
+		db, err = database.NewPostgres(cfg)
 		if err == nil {
 			break
 		}
@@ -78,7 +79,11 @@ func main() {
 		WithWebhook(webhookSvc).
 		WithLedger(ledgerSvc)
 
-	router := api.NewRouter(cfg)
+	router := api.NewRouter(cfg, &api.HealthChecker{
+		DB:      db.Pool,
+		Uptime:  time.Now(),
+		Version: "1.0.0",
+	})
 	auth.RegisterAuthRoutes(router, authSvc)
 	merchant.RegisterMerchantRoutes(router, merchantSvc, auth.AuthMiddleware(authSvc))
 	payment.RegisterPaymentRoutes(router, paymentSvc, auth.AuthMiddleware(authSvc))
@@ -102,6 +107,10 @@ func main() {
 	settlementSvc := settlement.NewService(settlementRepo, ledgerSvc)
 	settlement.RegisterSettlementRoutes(router, settlementSvc, auth.AuthMiddleware(authSvc))
 
+	webhookWorker := webhook.NewRetryWorker(webhookSvc, 60*time.Second)
+	workerCtx, workerCancel := context.WithCancel(context.Background())
+	go webhookWorker.Start(workerCtx)
+
 	srv := &http.Server{
 		Addr:    fmt.Sprintf(":%s", cfg.Port),
 		Handler: router,
@@ -119,4 +128,16 @@ func main() {
 	<-quit
 
 	log.Info().Msg("shutting down server...")
+
+	shutdownCtx, shutdownCancel := context.WithTimeout(context.Background(), 30*time.Second)
+	defer shutdownCancel()
+
+	workerCancel()
+
+	if err := srv.Shutdown(shutdownCtx); err != nil {
+		log.Error().Err(err).Msg("server forced to shutdown")
+	}
+
+	db.Close()
+	log.Info().Msg("server stopped gracefully")
 }

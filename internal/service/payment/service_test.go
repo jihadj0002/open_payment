@@ -62,6 +62,11 @@ func (m *mockRepo) GetTransactionByIdempotencyKey(ctx context.Context, key, merc
 	return args.Get(0).(*Transaction), args.Error(1)
 }
 
+func (m *mockRepo) ListStatusHistory(ctx context.Context, paymentIntentID string) ([]StatusHistoryEntry, error) {
+	args := m.Called(ctx, paymentIntentID)
+	return args.Get(0).([]StatusHistoryEntry), args.Error(1)
+}
+
 func (m *mockRepo) CreateTransaction(ctx context.Context, tx *Transaction) error {
 	args := m.Called(ctx, tx)
 	return args.Error(0)

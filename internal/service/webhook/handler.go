@@ -83,3 +83,31 @@ func HandleDeleteEndpoint(svc *Service) http.HandlerFunc {
 		w.WriteHeader(http.StatusNoContent)
 	}
 }
+
+func HandleRotateSecret(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := auth.GetClaims(r.Context())
+		if claims == nil {
+			api.RespondError(w, http.StatusUnauthorized, "auth_error", "unauthorized", "not authenticated")
+			return
+		}
+
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "missing_id", "endpoint ID is required")
+			return
+		}
+
+		result, err := svc.RotateSecret(r.Context(), id, claims.MerchantID)
+		if err != nil {
+			if err.Error() == "endpoint not found" {
+				api.RespondError(w, http.StatusNotFound, "not_found", "endpoint_not_found", "endpoint not found")
+				return
+			}
+			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "an unexpected error occurred")
+			return
+		}
+
+		api.RespondJSON(w, http.StatusOK, result)
+	}
+}

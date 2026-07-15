@@ -2,6 +2,7 @@ package webhook
 
 import (
 	"context"
+	"time"
 
 	"github.com/jackc/pgx/v5"
 	"github.com/openpayment/gateway/internal/database"
@@ -29,10 +30,10 @@ func (r *Repository) CreateEndpoint(ctx context.Context, e *Endpoint) error {
 func (r *Repository) GetEndpoint(ctx context.Context, id, merchantID string) (*Endpoint, error) {
 	var e Endpoint
 	err := r.Pool.QueryRow(ctx,
-		`SELECT id, merchant_id, event, url, secret, status, created_at, updated_at
+		`SELECT id, merchant_id, event, url, secret, previous_secret, previous_secret_expires_at, status, created_at, updated_at
 		 FROM webhooks WHERE id = $1 AND merchant_id = $2`,
 		id, merchantID,
-	).Scan(&e.ID, &e.MerchantID, &e.Event, &e.URL, &e.Secret, &e.Status, &e.CreatedAt, &e.UpdatedAt)
+	).Scan(&e.ID, &e.MerchantID, &e.Event, &e.URL, &e.Secret, &e.PreviousSecret, &e.PreviousSecretExpires, &e.Status, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		return nil, err
 	}
@@ -41,7 +42,7 @@ func (r *Repository) GetEndpoint(ctx context.Context, id, merchantID string) (*E
 
 func (r *Repository) ListEndpoints(ctx context.Context, merchantID string) ([]Endpoint, error) {
 	rows, err := r.Pool.Query(ctx,
-		`SELECT id, merchant_id, event, url, secret, status, created_at, updated_at
+		`SELECT id, merchant_id, event, url, secret, previous_secret, previous_secret_expires_at, status, created_at, updated_at
 		 FROM webhooks WHERE merchant_id = $1 AND status != 'deleted'
 		 ORDER BY created_at DESC`,
 		merchantID,
@@ -54,7 +55,7 @@ func (r *Repository) ListEndpoints(ctx context.Context, merchantID string) ([]En
 	var endpoints []Endpoint
 	for rows.Next() {
 		var e Endpoint
-		if err := rows.Scan(&e.ID, &e.MerchantID, &e.Event, &e.URL, &e.Secret, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.MerchantID, &e.Event, &e.URL, &e.Secret, &e.PreviousSecret, &e.PreviousSecretExpires, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		endpoints = append(endpoints, e)
@@ -76,7 +77,7 @@ func (r *Repository) DeleteEndpoint(ctx context.Context, id, merchantID string) 
 
 func (r *Repository) GetEndpointsForEvent(ctx context.Context, merchantID, event string) ([]Endpoint, error) {
 	rows, err := r.Pool.Query(ctx,
-		`SELECT id, merchant_id, event, url, secret, status, created_at, updated_at
+		`SELECT id, merchant_id, event, url, secret, previous_secret, previous_secret_expires_at, status, created_at, updated_at
 		 FROM webhooks WHERE merchant_id = $1 AND event = $2 AND status = 'active'`,
 		merchantID, event,
 	)
@@ -88,7 +89,7 @@ func (r *Repository) GetEndpointsForEvent(ctx context.Context, merchantID, event
 	var endpoints []Endpoint
 	for rows.Next() {
 		var e Endpoint
-		if err := rows.Scan(&e.ID, &e.MerchantID, &e.Event, &e.URL, &e.Secret, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
+		if err := rows.Scan(&e.ID, &e.MerchantID, &e.Event, &e.URL, &e.Secret, &e.PreviousSecret, &e.PreviousSecretExpires, &e.Status, &e.CreatedAt, &e.UpdatedAt); err != nil {
 			return nil, err
 		}
 		endpoints = append(endpoints, e)
@@ -144,10 +145,10 @@ func (r *Repository) UpdateDelivery(ctx context.Context, d *Delivery) error {
 func (r *Repository) GetDeliveryWebhook(ctx context.Context, webhookID string) (*Endpoint, error) {
 	var e Endpoint
 	err := r.Pool.QueryRow(ctx,
-		`SELECT id, merchant_id, event, url, secret, status, created_at, updated_at
+		`SELECT id, merchant_id, event, url, secret, previous_secret, previous_secret_expires_at, status, created_at, updated_at
 		 FROM webhooks WHERE id = $1`,
 		webhookID,
-	).Scan(&e.ID, &e.MerchantID, &e.Event, &e.URL, &e.Secret, &e.Status, &e.CreatedAt, &e.UpdatedAt)
+	).Scan(&e.ID, &e.MerchantID, &e.Event, &e.URL, &e.Secret, &e.PreviousSecret, &e.PreviousSecretExpires, &e.Status, &e.CreatedAt, &e.UpdatedAt)
 	if err != nil {
 		if err == pgx.ErrNoRows {
 			return nil, nil
@@ -155,4 +156,14 @@ func (r *Repository) GetDeliveryWebhook(ctx context.Context, webhookID string) (
 		return nil, err
 	}
 	return &e, nil
+}
+
+func (r *Repository) RotateSecret(ctx context.Context, id, currentSecret, newSecret string, expiresAt time.Time) error {
+	_, err := r.Pool.Exec(ctx,
+		`UPDATE webhooks
+		 SET previous_secret = $1, previous_secret_expires_at = $2, secret = $3, updated_at = NOW()
+		 WHERE id = $4`,
+		currentSecret, expiresAt, newSecret, id,
+	)
+	return err
 }

@@ -3,19 +3,25 @@ package config
 import (
 	"fmt"
 	"os"
+	"strconv"
+	"time"
 
 	"github.com/joho/godotenv"
 )
 
 type Config struct {
-	Port           string
-	LogLevel       string
-	DatabaseURL    string
-	RedisURL       string
-	KafkaBrokers   string
-	JWTSecret      string
-	Environment    string
-	EncryptionKey  string
+	Port             string
+	LogLevel         string
+	DatabaseURL      string
+	RedisURL         string
+	KafkaBrokers     string
+	JWTSecret        string
+	Environment      string
+	EncryptionKey    string
+	DBMaxConns       int
+	DBMinConns       int
+	DBMaxLifetime    time.Duration
+	DBMaxIdleTime    time.Duration
 }
 
 func Load() *Config {
@@ -37,12 +43,34 @@ func Load() *Config {
 		JWTSecret:     getEnv("JWT_SECRET", "dev-secret-change-in-production"),
 		Environment:   getEnv("ENVIRONMENT", "development"),
 		EncryptionKey: getEnv("ENCRYPTION_KEY", ""),
+		DBMaxConns:    getEnvInt("DATABASE_MAX_CONNS", 25),
+		DBMinConns:    getEnvInt("DATABASE_MIN_CONNS", 5),
+		DBMaxLifetime: getEnvDuration("DATABASE_MAX_LIFETIME", 30*time.Minute),
+		DBMaxIdleTime: getEnvDuration("DATABASE_MAX_IDLE_TIME", 5*time.Minute),
 	}
 }
 
 func getEnv(key, fallback string) string {
 	if val := os.Getenv(key); val != "" {
 		return val
+	}
+	return fallback
+}
+
+func getEnvInt(key string, fallback int) int {
+	if val := os.Getenv(key); val != "" {
+		if i, err := strconv.Atoi(val); err == nil {
+			return i
+		}
+	}
+	return fallback
+}
+
+func getEnvDuration(key string, fallback time.Duration) time.Duration {
+	if val := os.Getenv(key); val != "" {
+		if d, err := time.ParseDuration(val); err == nil {
+			return d
+		}
 	}
 	return fallback
 }
