@@ -757,15 +757,18 @@ Allow merchants to rotate webhook secrets. Ensure secrets are stored encrypted. 
 
 ### TASK-PROD-P2-001: Add API versioning
 
-**Status:** TODO | **Priority:** P2 | **Assignee:** backend-engineer
+**Status:** DONE | **Priority:** P2 | **Assignee:** backend-engineer
 
 **Description:**
 Add API versioning via URL prefix (`/v1/`, `/v2/`) or `Accept` header. Maintain backward compatibility.
 
 **Acceptance Criteria:**
-- [ ] Routes grouped under `/v1/` prefix
-- [ ] Version header in responses
-- [ ] Version negotiation documented
+- [x] Routes grouped under `/v1/` prefix
+- [x] Version header in responses (`X-API-Version: 1`)
+- [x] Root info endpoint at `/` shows API version details
+- [x] All route registration functions updated to register under `/v1/`
+
+**Completed:** 2026-07-16
 
 ---
 

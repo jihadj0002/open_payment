@@ -23,6 +23,29 @@ func testRouter() *chi.Mux {
 	})
 }
 
+func TestRootEndpoint(t *testing.T) {
+	router := testRouter()
+
+	req := httptest.NewRequest("GET", "/", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, http.StatusOK, rec.Code)
+
+	var body map[string]interface{}
+	err := json.Unmarshal(rec.Body.Bytes(), &body)
+	assert.NoError(t, err)
+
+	data, ok := body["data"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "Open Payment Gateway", data["name"])
+	assert.Equal(t, "1.0.0", data["version"])
+
+	apiVersion, ok := data["api_version"].(map[string]interface{})
+	assert.True(t, ok)
+	assert.Equal(t, "/v1/", apiVersion["v1"])
+}
+
 func TestHealthEndpoint(t *testing.T) {
 	router := testRouter()
 

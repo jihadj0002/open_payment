@@ -79,33 +79,37 @@ func main() {
 		WithWebhook(webhookSvc).
 		WithLedger(ledgerSvc)
 
-	router := api.NewRouter(cfg, &api.HealthChecker{
+	hc := &api.HealthChecker{
 		DB:      db.Pool,
 		Uptime:  time.Now(),
 		Version: "1.0.0",
-	})
-	auth.RegisterAuthRoutes(router, authSvc)
-	merchant.RegisterMerchantRoutes(router, merchantSvc, auth.AuthMiddleware(authSvc))
-	payment.RegisterPaymentRoutes(router, paymentSvc, auth.AuthMiddleware(authSvc))
+	}
+
+	router := api.NewRouter(cfg, hc)
+
+	v1 := hc.V1
+	auth.RegisterAuthRoutes(v1, authSvc)
+	merchant.RegisterMerchantRoutes(v1, merchantSvc, auth.AuthMiddleware(authSvc))
+	payment.RegisterPaymentRoutes(v1, paymentSvc, auth.AuthMiddleware(authSvc))
 
 	customerRepo := customer.NewRepository(db)
 	customerSvc := customer.NewService(customerRepo)
-	customer.RegisterCustomerRoutes(router, customerSvc, auth.AuthMiddleware(authSvc))
+	customer.RegisterCustomerRoutes(v1, customerSvc, auth.AuthMiddleware(authSvc))
 
-	webhook.RegisterWebhookRoutes(router, webhookSvc, auth.AuthMiddleware(authSvc))
-	ledger.RegisterLedgerRoutes(router, ledgerSvc, auth.AuthMiddleware(authSvc))
+	webhook.RegisterWebhookRoutes(v1, webhookSvc, auth.AuthMiddleware(authSvc))
+	ledger.RegisterLedgerRoutes(v1, ledgerSvc, auth.AuthMiddleware(authSvc))
 
 	fraudRepo := fraud.NewRepository(db)
 	fraudSvc := fraud.NewService(fraudRepo)
-	fraud.RegisterFraudRoutes(router, fraudSvc, auth.AuthMiddleware(authSvc))
+	fraud.RegisterFraudRoutes(v1, fraudSvc, auth.AuthMiddleware(authSvc))
 
 	adminRepo := admin.NewRepository(db)
 	adminSvc := admin.NewService(adminRepo)
-	admin.RegisterAdminRoutes(router, adminSvc, auth.AuthMiddleware(authSvc))
+	admin.RegisterAdminRoutes(v1, adminSvc, auth.AuthMiddleware(authSvc))
 
 	settlementRepo := settlement.NewRepository(db)
 	settlementSvc := settlement.NewService(settlementRepo, ledgerSvc)
-	settlement.RegisterSettlementRoutes(router, settlementSvc, auth.AuthMiddleware(authSvc))
+	settlement.RegisterSettlementRoutes(v1, settlementSvc, auth.AuthMiddleware(authSvc))
 
 	webhookWorker := webhook.NewRetryWorker(webhookSvc, 60*time.Second)
 	workerCtx, workerCancel := context.WithCancel(context.Background())

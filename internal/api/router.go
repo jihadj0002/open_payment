@@ -22,6 +22,7 @@ type HealthChecker struct {
 	Procs   []string
 	Uptime  time.Time
 	Version string
+	V1      chi.Router
 }
 
 func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
@@ -35,7 +36,7 @@ func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
 		AllowedOrigins:   allowedOrigins,
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "Idempotency-Key", "X-Signature", "X-Timestamp", "X-Nonce"},
-		ExposedHeaders:   []string{"X-Request-Id", "X-RateLimit-Remaining"},
+		ExposedHeaders:   []string{"X-Request-Id", "X-RateLimit-Remaining", "X-API-Version"},
 		MaxAge:           3600,
 	}))
 	r.Use(chimw.RequestID)
@@ -46,6 +47,8 @@ func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
 	r.Use(middleware.RequestSizeLimiter(1 << 20))
 	r.Use(metrics.Middleware)
 
+	r.Get("/", rootInfoHandler(hc))
+
 	r.Group(func(r chi.Router) {
 		r.Handle("/metrics", metrics.Handler())
 	})
@@ -55,8 +58,34 @@ func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
 		r.Get("/health", healthHandler(hc))
 	})
 
+	r.Route("/v1", func(r chi.Router) {
+		r.Use(apiVersionMiddleware)
+		hc.V1 = r
+	})
+
 	log.Info().Str("env", cfg.Environment).Strs("cors_origins", allowedOrigins).Msg("router initialized")
 	return r
+}
+
+func apiVersionMiddleware(next http.Handler) http.Handler {
+	return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		w.Header().Set("X-API-Version", "1")
+		next.ServeHTTP(w, r)
+	})
+}
+
+func rootInfoHandler(hc *HealthChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		RespondJSON(w, http.StatusOK, map[string]interface{}{
+			"name":    "Open Payment Gateway",
+			"version": "1.0.0",
+			"api_version": map[string]interface{}{
+				"v1": "/v1/",
+			},
+			"documentation": "/docs",
+			"health":        "/health",
+		})
+	}
 }
 
 func getAllowedOrigins(env string) []string {
