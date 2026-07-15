@@ -6,9 +6,11 @@ import DashboardLayout from '@/components/layout/DashboardLayout'
 import { api } from '@/lib/api'
 
 interface Balance {
-  total_balance: number
-  pending: number
   available: number
+  pending: number
+  reserve: number
+  merchant_id: string
+  currency: string
 }
 
 interface Payment {
@@ -20,10 +22,7 @@ interface Payment {
   created_at: string
 }
 
-interface PaymentsResponse {
-  payments: Payment[]
-  total: number
-}
+
 
 export default function DashboardPage() {
   const [balance, setBalance] = useState<Balance | null>(null)
@@ -33,11 +32,11 @@ export default function DashboardPage() {
   useEffect(() => {
     Promise.all([
       api.get<Balance>('/balance'),
-      api.get<PaymentsResponse>('/payments?limit=5'),
+      api.get<Payment[]>('/payments?limit=5'),
     ])
       .then(([balanceRes, paymentsRes]) => {
         setBalance(balanceRes.data)
-        setPayments(paymentsRes.data.payments)
+        setPayments(paymentsRes.data)
       })
       .catch(() => {})
       .finally(() => setLoading(false))
@@ -48,10 +47,10 @@ export default function DashboardPage() {
 
   const statsCards = balance
     ? [
-        { title: 'Total Volume', value: formatCurrency(balance.total_balance), icon: DollarSign, positive: true, change: '' },
+        { title: 'Total Volume', value: formatCurrency(balance.available + balance.pending, balance.currency), icon: DollarSign, positive: true, change: '' },
         { title: 'Success Rate', value: '98.7%', icon: TrendingUp, positive: true, change: '+0.3%' },
-        { title: 'Pending Amount', value: formatCurrency(balance.pending), icon: Clock, positive: false, change: '' },
-        { title: 'Available Balance', value: formatCurrency(balance.available), icon: Activity, positive: true, change: '' },
+        { title: 'Pending Amount', value: formatCurrency(balance.pending, balance.currency), icon: Clock, positive: false, change: '' },
+        { title: 'Available Balance', value: formatCurrency(balance.available, balance.currency), icon: Activity, positive: true, change: '' },
       ]
     : []
 

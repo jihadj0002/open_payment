@@ -4,17 +4,13 @@ import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/context/AuthContext'
-import { LayoutDashboard, CreditCard, Users, Building2, Key, Banknote, Settings, LogOut, Loader2 } from 'lucide-react'
+import { LayoutDashboard, CreditCard, Key, LogOut, Loader2 } from 'lucide-react'
 
 const sidebarLinks = [
   { label: 'Dashboard', href: '/dashboard', icon: LayoutDashboard },
   { label: 'Payments', href: '/payments', icon: CreditCard },
-  { label: 'Customers', href: '/customers', icon: Users },
-  { label: 'Merchants', href: '/merchants', icon: Building2 },
   { label: 'API Keys', href: '/api-keys', icon: Key },
   { label: 'Webhooks', href: '/webhooks', icon: Key },
-  { label: 'Settlements', href: '/settlements', icon: Banknote },
-  { label: 'Settings', href: '/settings', icon: Settings },
 ]
 
 export default function DashboardLayout({ children }: { children: React.ReactNode }) {
