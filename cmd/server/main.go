@@ -13,6 +13,7 @@ import (
 	"github.com/openpayment/gateway/internal/api"
 	"github.com/openpayment/gateway/internal/config"
 	"github.com/openpayment/gateway/internal/database"
+	"github.com/openpayment/gateway/internal/pkg/encrypt"
 	"github.com/openpayment/gateway/internal/pkg/logger"
 	"github.com/openpayment/gateway/internal/service/admin"
 	"github.com/openpayment/gateway/internal/service/auth"
@@ -29,6 +30,17 @@ func main() {
 	cfg := config.Load()
 
 	logger.Init(cfg.LogLevel)
+
+	if cfg.EncryptionKey != "" {
+		os.Setenv("ENCRYPTION_KEY", cfg.EncryptionKey)
+		if err := encrypt.Init(); err != nil {
+			log.Warn().Err(err).Msg("encryption initialization failed - sensitive data will not be encrypted")
+		} else {
+			log.Info().Msg("encryption initialized")
+		}
+	} else {
+		log.Warn().Msg("ENCRYPTION_KEY not set - sensitive data will not be encrypted")
+	}
 
 	log.Info().Str("port", cfg.Port).Msg("Starting Open Payment Gateway...")
 
@@ -54,8 +66,17 @@ func main() {
 	authSvc := auth.NewAuthService(cfg, db.Pool)
 	merchantRepo := merchant.NewRepository(db)
 	merchantSvc := merchant.NewService(merchantRepo)
+
+	webhookRepo := webhook.NewRepository(db)
+	webhookSvc := webhook.NewService(webhookRepo)
+
+	ledgerRepo := ledger.NewRepository(db)
+	ledgerSvc := ledger.NewService(ledgerRepo)
+
 	paymentRepo := payment.NewRepository(db)
-	paymentSvc := payment.NewService(paymentRepo, payment.NewProcessorClient("http://mock-processor:9000"))
+	paymentSvc := payment.NewService(paymentRepo, payment.NewProcessorClient("http://mock-processor:9000")).
+		WithWebhook(webhookSvc).
+		WithLedger(ledgerSvc)
 
 	router := api.NewRouter(cfg)
 	auth.RegisterAuthRoutes(router, authSvc)
@@ -66,12 +87,7 @@ func main() {
 	customerSvc := customer.NewService(customerRepo)
 	customer.RegisterCustomerRoutes(router, customerSvc, auth.AuthMiddleware(authSvc))
 
-	webhookRepo := webhook.NewRepository(db)
-	webhookSvc := webhook.NewService(webhookRepo)
 	webhook.RegisterWebhookRoutes(router, webhookSvc, auth.AuthMiddleware(authSvc))
-
-	ledgerRepo := ledger.NewRepository(db)
-	ledgerSvc := ledger.NewService(ledgerRepo)
 	ledger.RegisterLedgerRoutes(router, ledgerSvc, auth.AuthMiddleware(authSvc))
 
 	fraudRepo := fraud.NewRepository(db)

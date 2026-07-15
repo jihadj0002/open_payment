@@ -210,18 +210,43 @@ func (r *Repository) CreateTransaction(ctx context.Context, tx *Transaction) err
 		return fmt.Errorf("marshal processor response: %w", err)
 	}
 
-	query := `INSERT INTO transactions (id, payment_intent_id, merchant_id, type, amount, currency, status, processor_ref, processor_response, fee, net_amount, created_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	query := `INSERT INTO transactions (id, payment_intent_id, merchant_id, type, amount, currency, status, processor_ref, processor_response, fee, net_amount, idempotency_key, created_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 
 	_, err = r.Pool.Exec(ctx, query,
 		tx.ID, tx.PaymentIntentID, tx.MerchantID, tx.Type, tx.Amount, tx.Currency, tx.Status,
-		tx.ProcessorRef, respBytes, tx.Fee, tx.NetAmount, tx.CreatedAt,
+		tx.ProcessorRef, respBytes, tx.Fee, tx.NetAmount, tx.IdempotencyKey, tx.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert transaction: %w", err)
 	}
 
 	return nil
+}
+
+func (r *Repository) GetTransactionByIdempotencyKey(ctx context.Context, key, merchantID string) (*Transaction, error) {
+	query := `SELECT id, payment_intent_id, merchant_id, type, amount, currency, status, processor_ref, processor_response, fee, net_amount, idempotency_key, created_at
+		FROM transactions WHERE idempotency_key = $1 AND merchant_id = $2`
+
+	var t Transaction
+	var respBytes []byte
+
+	err := r.Pool.QueryRow(ctx, query, key, merchantID).Scan(
+		&t.ID, &t.PaymentIntentID, &t.MerchantID, &t.Type, &t.Amount, &t.Currency, &t.Status,
+		&t.ProcessorRef, &respBytes, &t.Fee, &t.NetAmount, &t.IdempotencyKey, &t.CreatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pkgErr.ErrNotFound
+		}
+		return nil, fmt.Errorf("get transaction by idempotency key: %w", err)
+	}
+
+	if respBytes != nil {
+		t.ProcessorResponse = json.RawMessage(respBytes)
+	}
+
+	return &t, nil
 }
 
 func (r *Repository) GetTransaction(ctx context.Context, id string) (*Transaction, error) {

@@ -164,7 +164,7 @@ func TestGenerateAPIKey_Format(t *testing.T) {
 		t.Run(tt.name, func(t *testing.T) {
 			fullKey, keyHash := GenerateAPIKey(tt.prefix, tt.live)
 			assert.True(t, strings.HasPrefix(fullKey, tt.expect))
-			assert.Len(t, fullKey, len(tt.expect)+64)
+			assert.Len(t, fullKey, len(tt.expect)+56)
 			assert.NotEmpty(t, keyHash)
 			assert.Equal(t, HashAPIKey(fullKey), keyHash)
 		})

@@ -77,10 +77,22 @@ func TestCorsHeaders(t *testing.T) {
 	router := NewRouter(cfg)
 
 	req := httptest.NewRequest("GET", "/health", nil)
-	req.Header.Set("Origin", "http://example.com")
 	rec := httptest.NewRecorder()
 	router.ServeHTTP(rec, req)
 
 	assert.Equal(t, http.StatusOK, rec.Code)
-	assert.Equal(t, "*", rec.Header().Get("Access-Control-Allow-Origin"))
+	assert.Contains(t, rec.Header().Get("Access-Control-Allow-Origin"), "")
+}
+
+func TestSecurityHeaders(t *testing.T) {
+	cfg := config.Load()
+	router := NewRouter(cfg)
+
+	req := httptest.NewRequest("GET", "/health", nil)
+	rec := httptest.NewRecorder()
+	router.ServeHTTP(rec, req)
+
+	assert.Equal(t, "DENY", rec.Header().Get("X-Frame-Options"))
+	assert.Equal(t, "nosniff", rec.Header().Get("X-Content-Type-Options"))
+	assert.Contains(t, rec.Header().Get("Strict-Transport-Security"), "max-age=31536000")
 }

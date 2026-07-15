@@ -13,6 +13,14 @@ import (
 	"github.com/openpayment/gateway/internal/service/auth"
 )
 
+func getIdempotencyKey(r *http.Request) *string {
+	key := r.Header.Get("Idempotency-Key")
+	if key == "" {
+		return nil
+	}
+	return &key
+}
+
 func HandleCreatePayment(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
 		claims := auth.GetClaims(r.Context())
@@ -115,7 +123,7 @@ func HandleCapturePayment(svc *Service) http.HandlerFunc {
 			return
 		}
 
-		pi, err := svc.CapturePayment(r.Context(), id, claims.MerchantID, req.AmountToCapture)
+		pi, err := svc.CapturePayment(r.Context(), id, claims.MerchantID, req.AmountToCapture, getIdempotencyKey(r))
 		if err != nil {
 			if errors.Is(err, ErrPaymentNotCapturable) {
 				api.RespondError(w, http.StatusBadRequest, "invalid_state", "not_capturable", err.Error())
@@ -123,6 +131,10 @@ func HandleCapturePayment(svc *Service) http.HandlerFunc {
 			}
 			if errors.Is(err, pkgErr.ErrNotFound) {
 				api.RespondError(w, http.StatusNotFound, "not_found", "payment_not_found", "payment not found")
+				return
+			}
+			if errors.Is(err, pkgErr.ErrDuplicateRequest) {
+				api.RespondError(w, http.StatusConflict, "conflict", "duplicate_request", err.Error())
 				return
 			}
 			api.RespondError(w, http.StatusBadRequest, "validation_error", "capture_failed", err.Error())
@@ -156,7 +168,7 @@ func HandleRefundPayment(svc *Service) http.HandlerFunc {
 			return
 		}
 
-		tx, err := svc.RefundPayment(r.Context(), id, claims.MerchantID, req.Amount, req.Reason)
+		tx, err := svc.RefundPayment(r.Context(), id, claims.MerchantID, req.Amount, req.Reason, getIdempotencyKey(r))
 		if err != nil {
 			if errors.Is(err, ErrPaymentNotRefundable) {
 				api.RespondError(w, http.StatusBadRequest, "invalid_state", "not_refundable", err.Error())
@@ -188,7 +200,7 @@ func HandleVoidPayment(svc *Service) http.HandlerFunc {
 			return
 		}
 
-		pi, err := svc.VoidPayment(r.Context(), id, claims.MerchantID)
+		pi, err := svc.VoidPayment(r.Context(), id, claims.MerchantID, getIdempotencyKey(r))
 		if err != nil {
 			if errors.Is(err, ErrPaymentNotVoidable) {
 				api.RespondError(w, http.StatusBadRequest, "invalid_state", "not_voidable", err.Error())

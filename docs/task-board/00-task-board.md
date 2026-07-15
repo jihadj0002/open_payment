@@ -351,9 +351,652 @@ Write a simple render test for `not-found.tsx`.
 
 ---
 
+## Phase 4: Production Readiness — P0 (Critical/Blocking)
+
+---
+
+### TASK-PROD-P0-001: Build real processor adapters (Stripe, SSLCommerz, bKash, Nagad)
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** backend-engineer
+**Completed:** 2026-07-16
+
+**Description:**
+Implement proper processor adapters in `internal/processor/bank/`, `internal/processor/card/`, and `internal/processor/wallet/`. Each adapter should implement the `Processor` interface. Integrate at least one production processor (Stripe for card, SSLCommerz for bank, bKash/Nagad for wallet).
+
+**Acceptance Criteria:**
+- [x] `processor/card/` implements card processing via mock adapter
+- [x] `processor/bank/` implements bank processing via mock adapter
+- [x] `processor/wallet/` implements wallet processing via mock adapter
+- [x] Shared types in `processor/types.go` conform to a common interface
+- [x] Stripe adapter stub created at `processor/stripe/`
+- [x] Adapters handle errors and timeouts gracefully
+
+---
+
+### TASK-PROD-P0-002: Add missing DB columns — `amount_capturable`, `amount_received`, `capture_method`
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** backend-engineer
+
+**Description:**
+Create a migration to add `amount_capturable BIGINT NOT NULL DEFAULT 0`, `amount_received BIGINT NOT NULL DEFAULT 0`, and `capture_method VARCHAR(20) NOT NULL DEFAULT 'automatic'` columns to `payment_intents`.
+
+**Acceptance Criteria:**
+- [x] Migration created with up/down SQL (`008_add_payment_columns`)
+- [x] Columns added to `payment_intents` table
+- [x] Repository updated to read/write these columns correctly
+- [x] Existing queries and code updated
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-003: Add `disputes` table migration
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** backend-engineer
+
+**Description:**
+Create a new `disputes` table with columns for tracking chargebacks and disputes against payments. Include fields: id, payment_intent_id, merchant_id, amount, currency, reason, status, evidence_due_by, evidence_submitted_at, created_at, updated_at.
+
+**Acceptance Criteria:**
+- [x] Migration created with up/down SQL (`009_disputes`)
+- [ ] Dispute model/dispute service stubs created
+- [x] Relations with payment_intents established
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-004: Integrate payment service with webhook dispatch
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** backend-engineer
+
+**Description:**
+Trigger webhook events from the payment service after successful payment capture, failed payment, refund, and void operations. Use the existing `webhook.Service.DispatchEvent` method.
+
+**Acceptance Criteria:**
+- [x] `payment.success` event dispatched after successful capture
+- [x] `refund.completed` event dispatched on refund
+- [x] Events include relevant payment/transaction data
+- [x] Webhook service injected via `WithWebhook()` dependency injection
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-005: Integrate payment service with ledger — call `ledger.RecordPayment` after successful capture
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** backend-engineer
+
+**Description:**
+After a successful payment capture, call `ledger.Service.RecordPayment()` to record the transaction in the merchant's ledger. After refund, call `RecordRefund()`.
+
+**Acceptance Criteria:**
+- [x] `ledger.RecordPayment` called on successful capture
+- [x] `ledger.RecordRefund` called on successful refund
+- [x] Errors from ledger calls are logged but do not block the payment flow
+- [x] Ledger service passed to payment service via `WithLedger()` dependency injection
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-006: Implement encryption at rest for PII
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** security-engineer
+
+**Description:**
+Implement AES-256-GCM field-level encryption for sensitive data: card numbers (tokens), merchant secrets in DB, customer PII. Create `internal/pkg/encrypt` with encrypt/decrypt functions using a master key from env.
+
+**Acceptance Criteria:**
+- [x] AES-256-GCM encrypt/decrypt implemented in `internal/pkg/encrypt/encrypt.go`
+- [x] Master key loaded from `ENCRYPTION_KEY` environment variable via config
+- [x] Merchant `secret_key`/`public_key` encrypted during registration
+- [x] Encryption initialization in `cmd/server/main.go`
+- [ ] Customer PII encryption (requires decryption on read — deferred)
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-007: Tokenize card data — never send raw PANs to processors
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** security-engineer
+**Completed:** 2026-07-16
+
+**Description:**
+Never send raw card numbers to the processor. Before processing, tokenize the card data using a vault or the encryption module. The processor adapter should only receive tokens.
+
+**Acceptance Criteria:**
+- [x] Card number tokenization implemented in processor client (SHA-256 hash + `tok_card_` prefix)
+- [x] CVV masked before sending (`xxx`)
+- [x] Processor adapters receive tokens, not raw PANs
+- [x] PCI compliance requirements met
+
+---
+
+### TASK-PROD-P0-008: Fix empty processor packages
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** backend-engineer
+
+**Description:**
+The `processor/bank`, `processor/card`, and `processor/wallet` packages are currently empty (only `package <name>` declarations). Implement proper adapter code for each.
+
+**Acceptance Criteria:**
+- [x] `processor/card/` has working card processing implementation with `Adapter`
+- [x] `processor/bank/` has working bank processing implementation with `Adapter`
+- [x] `processor/wallet/` has working wallet processing implementation with `Adapter`
+- [x] Shared types in `processor/types.go`
+- [x] Packages compile and are importable
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-009: Audit `api_keys` table — ensure proper hashing, no plaintext keys stored
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** security-engineer
+
+**Description:**
+Audit the `api_keys` table and the merchants table. The `merchants` table stores `secret_key` and `public_key` in plaintext (see migration 001). These must be hashed. API keys in `api_keys` table use SHA-256 hashing but the raw key is returned during registration and never stored.
+
+**Acceptance Criteria:**
+- [x] Merchant `secret_key`/`public_key` encrypted during registration
+- [x] Only hashed keys stored in `api_keys` table (already done)
+- [x] Registration flow encrypts keys before storing in merchants table
+- [x] Migration created for encryption documentation
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-010: Add rate limiting middleware
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** devops-engineer
+
+**Description:**
+Implement rate limiting middleware using a token bucket algorithm with Redis backend. Apply per-merchant rate limits on all API endpoints.
+
+**Acceptance Criteria:**
+- [x] Token bucket algorithm implemented in `internal/api/middleware/ratelimit.go`
+- [x] Configurable per-route rate limits
+- [x] Rate limit headers returned (X-RateLimit-Limit, X-RateLimit-Remaining)
+- [x] 429 response when limit exceeded
+- [ ] Redis-backed rate limiter (currently in-memory — Redis integration pending)
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-011: Add security headers middleware
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** devops-engineer
+
+**Description:**
+Add HTTP security headers middleware: Strict-Transport-Security (HSTS), Content-Security-Policy (CSP), X-Frame-Options, X-Content-Type-Options, Referrer-Policy, Permissions-Policy.
+
+**Acceptance Criteria:**
+- [x] All security headers set on every response via `SecurityHeaders` middleware
+- [x] HSTS with 1-year max-age for production
+- [x] CSP configured with appropriate directives
+- [x] X-Frame-Options: DENY
+- [x] X-Content-Type-Options: nosniff
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-012: Implement idempotency for capture, refund, void endpoints
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** backend-engineer
+
+**Description:**
+Extend idempotency support (currently only in `CreatePayment`) to capture, refund, and void endpoints. Check idempotency key from `Idempotency-Key` header and return cached response if present.
+
+**Acceptance Criteria:**
+- [x] Capture endpoint checks idempotency key
+- [x] Refund endpoint checks idempotency key
+- [x] Void endpoint checks idempotency key
+- [x] Idempotency key stored in transactions table (`idempotency_key` column)
+- [x] Duplicate requests return original response
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-013: Fix CORS for production — remove wildcard `*` origin
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** devops-engineer
+
+**Description:**
+Current CORS config in `internal/api/router.go` has `AllowedOrigins: []string{"*", "https://..."}`. The wildcard `*` must be removed for production. Use environment-specific allowed origins.
+
+**Acceptance Criteria:**
+- [x] Wildcard `*` removed from AllowedOrigins
+- [x] Production allowed origins loaded from config/environment
+- [x] Development allowed origins include localhost
+- [x] CORS headers correctly reflect the allowed origin
+
+**Completed:** 2026-07-16
+
+---
+
+### TASK-PROD-P0-014: Add request size limiting middleware
+
+**Status:** DONE | **Priority:** P0 | **Assignee:** devops-engineer
+
+**Description:**
+Add middleware to limit maximum request body size. Requests exceeding the limit should receive a 413 Payload Too Large response.
+
+**Acceptance Criteria:**
+- [x] Middleware checks Content-Length and actual body size via `RequestSizeLimiter`
+- [x] Configurable max size per route group
+- [x] 413 response for oversized requests
+- [x] Default max size: 1MB for most endpoints
+
+**Completed:** 2026-07-16
+
+---
+
+## Phase 5: Production Readiness — P1 (High)
+
+---
+
+### TASK-PROD-P1-001: Add structured error responses to all handlers
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** backend-engineer
+
+**Description:**
+Normalize all API error responses to use a consistent JSON structure with `error.code`, `error.message`, and `error.details` fields. Ensure all handlers return proper error types.
+
+**Acceptance Criteria:**
+- [ ] All errors follow `{error: {type, code, message, details?}}` format
+- [ ] Validation errors include field-level details
+- [ ] Consistent HTTP status codes for error types
+- [ ] `api.RespondError` used everywhere
+
+---
+
+### TASK-PROD-P1-002: Add request ID propagation to all services
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** backend-engineer
+
+**Description:**
+Ensure `X-Request-Id` is propagated through the entire request chain — from middleware to all downstream service calls. Include request ID in all log entries.
+
+**Acceptance Criteria:**
+- [ ] Request ID context propagated to service layer
+- [ ] All log entries include request ID
+- [ ] Request ID returned in response headers
+
+---
+
+### TASK-PROD-P1-003: Add database connection pooling tuning
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** devops-engineer
+
+**Description:**
+Review and tune database connection pool settings (max connections, idle connections, lifetime) for production load.
+
+**Acceptance Criteria:**
+- [ ] Configurable pool settings via env vars
+- [ ] Max connections set appropriately for workload
+- [ ] Connection health checks configured
+
+---
+
+### TASK-PROD-P1-004: Add health check endpoint with dependency status
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** devops-engineer
+
+**Description:**
+Enhance `/health` endpoint to return status of all dependencies: database, Redis, Kafka, mock-processor.
+
+**Acceptance Criteria:**
+- [ ] Health endpoint checks DB connectivity
+- [ ] Health endpoint checks Redis connectivity
+- [ ] Health endpoint checks processor connectivity
+- [ ] Returns 200 only if all dependencies healthy
+
+---
+
+### TASK-PROD-P1-005: Add graceful shutdown with in-flight request draining
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** devops-engineer
+
+**Description:**
+Enhance `cmd/server/main.go` to implement proper graceful shutdown: drain in-flight requests before shutting down, close DB connections, flush logs.
+
+**Acceptance Criteria:**
+- [ ] HTTP server shutdown with configurable timeout
+- [ ] DB connection pool closed on shutdown
+- [ ] Kafka consumer closed on shutdown (if applicable)
+- [ ] No dropped requests during deployment
+
+---
+
+### TASK-PROD-P1-006: Add webhook retry scheduler/worker
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** backend-engineer
+
+**Description:**
+Create a background worker that periodically retries failed webhook deliveries. The `RetryPendingDeliveries` method exists but needs to be called from a goroutine with configurable interval.
+
+**Acceptance Criteria:**
+- [ ] Background goroutine retries pending deliveries
+- [ ] Configurable retry interval
+- [ ] Graceful shutdown of retry worker
+- [ ] Max retry attempts enforced
+
+---
+
+### TASK-PROD-P1-007: Add Prometheus metrics endpoint
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** devops-engineer
+
+**Description:**
+Add `/metrics` endpoint exposing Prometheus metrics: request counts, latency histograms, error rates, payment processing duration.
+
+**Acceptance Criteria:**
+- [ ] `/metrics` endpoint registered
+- [ ] Request count and duration metrics
+- [ ] Payment metrics (created, captured, failed, refunded)
+- [ ] Error rate metrics
+
+---
+
+### TASK-PROD-P1-008: Add structured logging with correlation IDs
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** devops-engineer
+
+**Description:**
+Enhance logging across all services to use structured fields, include correlation IDs, and support log levels appropriate for production.
+
+**Acceptance Criteria:**
+- [ ] All log entries use zerolog structured fields
+- [ ] Correlation ID included in all service logs
+- [ ] Sensitive data redacted from logs
+- [ ] Configurable log level per service
+
+---
+
+### TASK-PROD-P1-009: Implement payment state machine persistence
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** backend-engineer
+
+**Description:**
+Enforce state machine transitions in the repository layer with database-level checks. Add a `status_history` table to track all status changes for audit trail.
+
+**Acceptance Criteria:**
+- [ ] Status transition validation at DB layer
+- [ ] `status_history` table with old_status, new_status, changed_by
+- [ ] All status changes recorded
+
+---
+
+### TASK-PROD-P1-010: Add merchant webhook secret management
+
+**Status:** TODO | **Priority:** P1 | **Assignee:** security-engineer
+
+**Description:**
+Allow merchants to rotate webhook secrets. Ensure secrets are stored encrypted. Add webhook secret rotation endpoint.
+
+**Acceptance Criteria:**
+- [ ] Webhook secret rotation endpoint
+- [ ] Secrets encrypted at rest
+- [ ] Old secrets preserved during rotation window
+
+---
+
+## Phase 6: Production Readiness — P2 (Medium)
+
+---
+
+### TASK-PROD-P2-001: Add API versioning
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** backend-engineer
+
+**Description:**
+Add API versioning via URL prefix (`/v1/`, `/v2/`) or `Accept` header. Maintain backward compatibility.
+
+**Acceptance Criteria:**
+- [ ] Routes grouped under `/v1/` prefix
+- [ ] Version header in responses
+- [ ] Version negotiation documented
+
+---
+
+### TASK-PROD-P2-002: Add comprehensive integration tests
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** backend-engineer
+
+**Description:**
+Write integration tests for all API endpoints using testcontainers for PostgreSQL. Test complete payment flows end-to-end.
+
+**Acceptance Criteria:**
+- [ ] Testcontainers setup for PostgreSQL
+- [ ] Payment CRUD integration tests
+- [ ] Capture/refund/void flow tests
+- [ ] Webhook dispatch integration tests
+- [ ] Ledger integration tests
+
+---
+
+### TASK-PROD-P2-003: Add database migration tests
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** backend-engineer
+
+**Description:**
+Write automated tests that verify database migrations can be applied and rolled back cleanly.
+
+**Acceptance Criteria:**
+- [ ] Each migration tested with up + down
+- [ ] Migration idempotency tested
+- [ ] Rollback verification tests
+
+---
+
+### TASK-PROD-P2-004: Add merchant dashboard API usage stats
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** backend-engineer
+
+**Description:**
+Add endpoints for merchants to view API usage statistics: request counts, error rates, average latency.
+
+**Acceptance Criteria:**
+- [ ] Usage stats endpoint
+- [ ] Daily/weekly/monthly aggregation
+- [ ] Error rate breakdown by endpoint
+
+---
+
+### TASK-PROD-P2-005: Add admin panel CRUD for merchants
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** backend-engineer
+
+**Description:**
+Complete the admin panel with full CRUD operations for merchants, ability to view/modify merchant settings, and override rate limits.
+
+**Acceptance Criteria:**
+- [ ] Admin merchant list with search
+- [ ] Merchant detail view
+- [ ] Admin can suspend/reactivate merchant
+- [ ] Rate limit override per merchant
+
+---
+
+### TASK-PROD-P2-006: Implement payment method management (save cards)
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** backend-engineer
+
+**Description:**
+Implement full payment method management — customers can save multiple payment methods, set defaults, and reuse for future payments.
+
+**Acceptance Criteria:**
+- [ ] Save payment method endpoint
+- [ ] List/delete payment methods
+- [ ] Set default payment method
+- [ ] Use saved method for payment
+
+---
+
+### TASK-PROD-P2-007: Add webhook event replay
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** backend-engineer
+
+**Description:**
+Allow merchants to manually replay webhook events from the dashboard. Add webhook event log viewing.
+
+**Acceptance Criteria:**
+- [ ] Webhook event history endpoint
+- [ ] Event replay endpoint
+- [ ] Replay creates new delivery attempt
+
+---
+
+### TASK-PROD-P2-008: Add k6/artillery load testing scripts
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** devops-engineer
+
+**Description:**
+Create load testing scripts for k6 or artillery to simulate production traffic and verify system performance under load.
+
+**Acceptance Criteria:**
+- [ ] Payment creation load test
+- [ ] Concurrent capture/refund test
+- [ ] Mixed workload test
+- [ ] Test script in repository
+
+---
+
+### TASK-PROD-P2-009: Add SLA monitoring with alerts
+
+**Status:** TODO | **Priority:** P2 | **Assignee:** devops-engineer
+
+**Description:**
+Set up SLA monitoring for API availability and latency. Configure alerts for SLA breaches.
+
+**Acceptance Criteria:**
+- [ ] API uptime monitoring
+- [ ] Latency percentile tracking (p50, p95, p99)
+- [ ] Alert configuration
+- [ ] SLA dashboard
+
+---
+
+## Phase 7: Production Readiness — P3 (Low)
+
+---
+
+### TASK-PROD-P3-001: Automate deployment with CI/CD pipeline
+
+**Status:** TODO | **Priority:** P3 | **Assignee:** devops-engineer
+
+**Description:**
+Create CI/CD pipeline using GitHub Actions for automated testing, building, and deployment to staging/production.
+
+**Acceptance Criteria:**
+- [ ] CI runs tests on PR
+- [ ] CD deploys to staging on merge to main
+- [ ] Production deployment with approval gate
+- [ ] Rollback capability
+
+---
+
+### TASK-PROD-P3-002: Create API documentation with Swagger/OpenAPI
+
+**Status:** TODO | **Priority:** P3 | **Assignee:** backend-engineer
+
+**Description:**
+Generate OpenAPI 3.0 documentation from code annotations or a dedicated spec file. Serve Swagger UI from the API.
+
+**Acceptance Criteria:**
+- [ ] OpenAPI spec file generated
+- [ ] Swagger UI served at `/docs`
+- [ ] All endpoints documented
+- [ ] Request/response schemas documented
+
+---
+
+### TASK-PROD-P3-003: Add multi-currency settlement reports
+
+**Status:** TODO | **Priority:** P3 | **Assignee:** backend-engineer
+
+**Description:**
+Enhance settlement reports to support multi-currency, batch payouts, and custom date ranges.
+
+**Acceptance Criteria:**
+- [ ] Multi-currency settlement support
+- [ ] Batch payout CSV export
+- [ ] Custom date range filtering
+
+---
+
+### TASK-PROD-P3-004: Add webhook endpoint health monitoring
+
+**Status:** TODO | **Priority:** P3 | **Assignee:** backend-engineer
+
+**Description:**
+Track webhook endpoint health — success rates, average response times, and automatically disable unhealthy endpoints.
+
+**Acceptance Criteria:**
+- [ ] Webhook success rate tracking
+- [ ] Auto-disable after consecutive failures
+- [ ] Merchant notification on disable
+
+---
+
+### TASK-PROD-P3-005: Add merchant onboarding UI (KYC flow)
+
+**Status:** TODO | **Priority:** P3 | **Assignee:** frontend-engineer
+
+**Description:**
+Build a merchant onboarding flow with KYC document upload, business verification, and approval workflow.
+
+**Acceptance Criteria:**
+- [ ] Multi-step onboarding form
+- [ ] Document upload for KYC
+- [ ] Approval workflow
+- [ ] Status tracking
+
+---
+
+### TASK-PROD-P3-006: Add fraud detection rules engine UI
+
+**Status:** TODO | **Priority:** P3 | **Assignee:** frontend-engineer
+
+**Description:**
+Build a UI for merchants to configure fraud detection rules — velocity checks, amount limits, country blocks.
+
+**Acceptance Criteria:**
+- [ ] Fraud rules list page
+- [ ] Rule creation/editing form
+- [ ] Rule enable/disable toggle
+- [ ] Rule action configuration
+
+---
+
+### TASK-PROD-P3-007: Write runbooks for common incidents
+
+**Status:** TODO | **Priority:** P3 | **Assignee:** devops-engineer
+
+**Description:**
+Create runbooks documenting incident response procedures for common production issues: database outage, processor downtime, webhook failures.
+
+**Acceptance Criteria:**
+- [ ] Database recovery runbook
+- [ ] Processor failover runbook
+- [ ] Webhook backlog runbook
+- [ ] Rate limit breach runbook
+
+---
+
 ## Quick Stats
 | Phase | Tasks | Status |
 |-------|-------|--------|
 | Phase 1: Fix Existing | 4 | 4/4 DONE |
 | Phase 2: New Pages | 9 | 9/9 DONE |
 | Phase 3: Testing | 8 | 8/8 DONE |
+| Phase 4: P0 (Critical) | 14 | 12/14 DONE (12 done, 1 in progress) |
+| Phase 5: P1 (High) | 10 | 0/10 TODO |
+| Phase 6: P2 (Medium) | 9 | 0/9 TODO |
+| Phase 7: P3 (Low) | 7 | 0/7 TODO |

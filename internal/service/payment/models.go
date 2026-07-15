@@ -39,6 +39,7 @@ type Transaction struct {
 	ProcessorResponse json.RawMessage `json:"processor_response,omitempty"`
 	Fee               int64           `json:"fee,omitempty"`
 	NetAmount         int64           `json:"net_amount,omitempty"`
+	IdempotencyKey    *string         `json:"idempotency_key,omitempty"`
 	CreatedAt         time.Time       `json:"created_at"`
 }
 

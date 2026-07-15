@@ -16,8 +16,10 @@ var supportedCurrencies = map[string]bool{
 }
 
 type Service struct {
-	repo      PaymentRepository
-	processor Processor
+	repo       PaymentRepository
+	processor  Processor
+	webhookSvc WebhookService
+	ledgerSvc  LedgerService
 }
 
 func NewService(repo PaymentRepository, processor Processor) *Service {
@@ -25,6 +27,16 @@ func NewService(repo PaymentRepository, processor Processor) *Service {
 		repo:      repo,
 		processor: processor,
 	}
+}
+
+func (s *Service) WithWebhook(svc WebhookService) *Service {
+	s.webhookSvc = svc
+	return s
+}
+
+func (s *Service) WithLedger(svc LedgerService) *Service {
+	s.ledgerSvc = svc
+	return s
 }
 
 func (s *Service) CreatePayment(ctx context.Context, merchantID string, req CreatePaymentRequest) (*PaymentIntent, error) {
@@ -159,10 +171,49 @@ func (s *Service) ProcessPayment(ctx context.Context, pi *PaymentIntent) error {
 		return fmt.Errorf("create transaction: %w", err)
 	}
 
+	s.dispatchWebhook(ctx, pi.MerchantID, "payment.success", pi)
+	s.recordLedgerPayment(ctx, pi.MerchantID, tx.ID, pi.Currency, pi.Amount, procResp.Fee)
+
 	return nil
 }
 
-func (s *Service) CapturePayment(ctx context.Context, id, merchantID string, amount *int64) (*PaymentIntent, error) {
+func (s *Service) dispatchWebhook(ctx context.Context, merchantID, eventType string, data interface{}) {
+	if s.webhookSvc != nil {
+		s.webhookSvc.DispatchEvent(ctx, merchantID, eventType, data)
+	}
+}
+
+func (s *Service) recordLedgerPayment(ctx context.Context, merchantID, transactionID, currency string, amount, fee int64) {
+	if s.ledgerSvc != nil {
+		if err := s.ledgerSvc.RecordPayment(ctx, merchantID, transactionID, currency, amount, fee); err != nil {
+			_ = err
+		}
+	}
+}
+
+func (s *Service) recordLedgerRefund(ctx context.Context, merchantID, transactionID, currency string, amount int64) {
+	if s.ledgerSvc != nil {
+		if err := s.ledgerSvc.RecordRefund(ctx, merchantID, transactionID, currency, amount); err != nil {
+			_ = err
+		}
+	}
+}
+
+func (s *Service) CapturePayment(ctx context.Context, id, merchantID string, amount *int64, idempotencyKey *string) (*PaymentIntent, error) {
+	if idempotencyKey != nil {
+		existing, err := s.checkTransactionIdempotency(ctx, *idempotencyKey, merchantID, "capture")
+		if err != nil && !errors.Is(err, pkgErr.ErrNotFound) {
+			return nil, fmt.Errorf("check idempotency: %w", err)
+		}
+		if existing != nil {
+			pi, err := s.repo.GetPaymentIntent(ctx, id, merchantID)
+			if err != nil {
+				return nil, err
+			}
+			return pi, nil
+		}
+	}
+
 	pi, err := s.repo.GetPaymentIntent(ctx, id, merchantID)
 	if err != nil {
 		return nil, err
@@ -200,6 +251,7 @@ func (s *Service) CapturePayment(ctx context.Context, id, merchantID string, amo
 		Currency:        pi.Currency,
 		Fee:             0,
 		NetAmount:       captureAmount,
+		IdempotencyKey:  idempotencyKey,
 	}
 
 	if err := s.repo.CreateTransaction(ctx, tx); err != nil {
@@ -210,10 +262,37 @@ func (s *Service) CapturePayment(ctx context.Context, id, merchantID string, amo
 	pi.AmountCapturable = newCapturable
 	pi.AmountReceived = newReceived
 
+	s.dispatchWebhook(ctx, pi.MerchantID, "payment.success", pi)
+	s.recordLedgerPayment(ctx, pi.MerchantID, tx.ID, pi.Currency, captureAmount, 0)
+
 	return pi, nil
 }
 
-func (s *Service) RefundPayment(ctx context.Context, id, merchantID string, amount int64, reason string) (*Transaction, error) {
+func (s *Service) checkTransactionIdempotency(ctx context.Context, idempotencyKey, merchantID string, txType string) (*Transaction, error) {
+	if idempotencyKey == "" {
+		return nil, nil
+	}
+	existing, err := s.repo.GetTransactionByIdempotencyKey(ctx, idempotencyKey, merchantID)
+	if err != nil {
+		return nil, err
+	}
+	if existing != nil && existing.Type == txType {
+		return existing, nil
+	}
+	return nil, nil
+}
+
+func (s *Service) RefundPayment(ctx context.Context, id, merchantID string, amount int64, reason string, idempotencyKey *string) (*Transaction, error) {
+	if idempotencyKey != nil {
+		existing, err := s.checkTransactionIdempotency(ctx, *idempotencyKey, merchantID, "refund")
+		if err != nil && !errors.Is(err, pkgErr.ErrNotFound) {
+			return nil, fmt.Errorf("check idempotency: %w", err)
+		}
+		if existing != nil {
+			return existing, nil
+		}
+	}
+
 	pi, err := s.repo.GetPaymentIntent(ctx, id, merchantID)
 	if err != nil {
 		return nil, err
@@ -245,6 +324,7 @@ func (s *Service) RefundPayment(ctx context.Context, id, merchantID string, amou
 		Amount:          refundAmount,
 		Currency:        pi.Currency,
 		NetAmount:       -refundAmount,
+		IdempotencyKey:  idempotencyKey,
 	}
 
 	if err := s.repo.CreateTransaction(ctx, tx); err != nil {
@@ -260,10 +340,27 @@ func (s *Service) RefundPayment(ctx context.Context, id, merchantID string, amou
 	pi.AmountReceived = newReceived
 	pi.AmountCapturable = int64(math.Max(0, float64(pi.AmountCapturable-refundAmount)))
 
+	s.dispatchWebhook(ctx, pi.MerchantID, "refund.completed", tx)
+	s.recordLedgerRefund(ctx, pi.MerchantID, tx.ID, pi.Currency, refundAmount)
+
 	return tx, nil
 }
 
-func (s *Service) VoidPayment(ctx context.Context, id, merchantID string) (*PaymentIntent, error) {
+func (s *Service) VoidPayment(ctx context.Context, id, merchantID string, idempotencyKey *string) (*PaymentIntent, error) {
+	if idempotencyKey != nil {
+		existing, err := s.checkTransactionIdempotency(ctx, *idempotencyKey, merchantID, "void")
+		if err != nil && !errors.Is(err, pkgErr.ErrNotFound) {
+			return nil, fmt.Errorf("check idempotency: %w", err)
+		}
+		if existing != nil {
+			pi, err := s.repo.GetPaymentIntent(ctx, id, merchantID)
+			if err != nil {
+				return nil, err
+			}
+			return pi, nil
+		}
+	}
+
 	pi, err := s.repo.GetPaymentIntent(ctx, id, merchantID)
 	if err != nil {
 		return nil, err
@@ -284,6 +381,7 @@ func (s *Service) VoidPayment(ctx context.Context, id, merchantID string) (*Paym
 		Status:          "succeeded",
 		Amount:          0,
 		Currency:        pi.Currency,
+		IdempotencyKey:  idempotencyKey,
 	}
 
 	if err := s.repo.CreateTransaction(ctx, tx); err != nil {

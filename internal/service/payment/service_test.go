@@ -54,6 +54,14 @@ func (m *mockRepo) GetByIdempotencyKey(ctx context.Context, key, merchantID stri
 	return args.Get(0).(*PaymentIntent), args.Error(1)
 }
 
+func (m *mockRepo) GetTransactionByIdempotencyKey(ctx context.Context, key, merchantID string) (*Transaction, error) {
+	args := m.Called(ctx, key, merchantID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*Transaction), args.Error(1)
+}
+
 func (m *mockRepo) CreateTransaction(ctx context.Context, tx *Transaction) error {
 	args := m.Called(ctx, tx)
 	return args.Error(0)
@@ -234,7 +242,7 @@ func TestCapturePayment_Success(t *testing.T) {
 		return tx.PaymentIntentID == "pi_1" && tx.Type == "capture" && tx.Amount == int64(1000)
 	})).Return(nil).Once()
 
-	result, err := svc.CapturePayment(context.Background(), "pi_1", merchantID, nil)
+	result, err := svc.CapturePayment(context.Background(), "pi_1", merchantID, nil, nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, result)
 	assert.Equal(t, StatusSucceeded, result.Status)
@@ -275,7 +283,7 @@ func TestCapturePayment_InvalidState(t *testing.T) {
 			}
 			repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
 
-			result, err := svc.CapturePayment(context.Background(), "pi_1", merchantID, nil)
+			result, err := svc.CapturePayment(context.Background(), "pi_1", merchantID, nil, nil)
 			assert.Error(t, err)
 			assert.ErrorIs(t, err, ErrPaymentNotCapturable)
 			assert.Nil(t, result)
@@ -306,7 +314,7 @@ func TestRefundPayment_Success(t *testing.T) {
 	})).Return(nil).Once()
 	repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_1", StatusRefunded).Return(nil).Once()
 
-	tx, err := svc.RefundPayment(context.Background(), "pi_1", merchantID, 0, "customer request")
+		tx, err := svc.RefundPayment(context.Background(), "pi_1", merchantID, 0, "customer request", nil)
 	assert.NoError(t, err)
 	assert.NotNil(t, tx)
 	assert.Equal(t, "refund", tx.Type)
@@ -344,7 +352,7 @@ func TestRefundPayment_InvalidState(t *testing.T) {
 			}
 			repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
 
-			tx, err := svc.RefundPayment(context.Background(), "pi_1", merchantID, 100, "test")
+			tx, err := svc.RefundPayment(context.Background(), "pi_1", merchantID, 100, "test", nil)
 			assert.Error(t, err)
 			assert.ErrorIs(t, err, ErrPaymentNotRefundable)
 			assert.Nil(t, tx)
@@ -385,7 +393,7 @@ func TestVoidPayment_Success(t *testing.T) {
 				return tx.PaymentIntentID == "pi_1" && tx.Type == "void"
 			})).Return(nil).Once()
 
-			result, err := svc.VoidPayment(context.Background(), "pi_1", merchantID)
+			result, err := svc.VoidPayment(context.Background(), "pi_1", merchantID, nil)
 			assert.NoError(t, err)
 			assert.NotNil(t, result)
 			assert.Equal(t, StatusCanceled, result.Status)
@@ -425,7 +433,7 @@ func TestVoidPayment_InvalidState(t *testing.T) {
 			}
 			repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
 
-			result, err := svc.VoidPayment(context.Background(), "pi_1", merchantID)
+			result, err := svc.VoidPayment(context.Background(), "pi_1", merchantID, nil)
 			assert.Error(t, err)
 			assert.ErrorIs(t, err, ErrPaymentNotVoidable)
 			assert.Nil(t, result)

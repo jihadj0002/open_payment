@@ -120,10 +120,11 @@ func TestProcessCard_DefaultsApplied(t *testing.T) {
 	req := CardRequest{Amount: 2000, Currency: "USD"}
 	_, err := client.ProcessCard(req)
 	require.NoError(t, err)
-	assert.Equal(t, "4111111111111111", capturedReq.CardNumber)
+	assert.Contains(t, capturedReq.CardNumber, "tok_card_")
+	assert.NotEqual(t, "4111111111111111", capturedReq.CardNumber)
 	assert.Equal(t, "12", capturedReq.ExpiryMonth)
 	assert.Equal(t, "2030", capturedReq.ExpiryYear)
-	assert.Equal(t, "123", capturedReq.CVV)
+	assert.Equal(t, "xxx", capturedReq.CVV)
 }
 
 func TestProcessCard_InvalidJSONResponse(t *testing.T) {

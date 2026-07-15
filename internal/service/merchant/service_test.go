@@ -170,7 +170,7 @@ func TestCreateAPIKey_Success(t *testing.T) {
 	assert.NotNil(t, result)
 	assert.NotEmpty(t, result.FullKey)
 	assert.Equal(t, "My API Key", result.Name)
-	assert.Len(t, result.FullKey, len("sk_test_")+64)
+	assert.Len(t, result.FullKey, len("sk_test_")+56)
 	repo.AssertExpectations(t)
 }
 

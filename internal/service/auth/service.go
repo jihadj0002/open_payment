@@ -17,6 +17,7 @@ import (
 	"golang.org/x/crypto/bcrypt"
 
 	"github.com/openpayment/gateway/internal/config"
+	"github.com/openpayment/gateway/internal/pkg/encrypt"
 )
 
 var (
@@ -270,10 +271,13 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*AuthR
 	var merchantID string
 	secretKey, pubKey, secretHash, pubHash := GenerateSecretAndPublishableKeys()
 
+	encryptedSecret, _ := encrypt.Encrypt([]byte(secretKey))
+	encryptedPub, _ := encrypt.Encrypt([]byte(pubKey))
+
 	err = tx.QueryRow(
 		ctx,
 		`INSERT INTO merchants (name, email, password_hash, secret_key, public_key, status) VALUES ($1, $2, $3, $4, $5, 'active') RETURNING id`,
-		req.Name, req.Email, string(hashedPassword), secretKey, pubKey,
+		req.Name, req.Email, string(hashedPassword), encryptedSecret, encryptedPub,
 	).Scan(&merchantID)
 	if err != nil {
 		return nil, fmt.Errorf("creating merchant: %w", err)

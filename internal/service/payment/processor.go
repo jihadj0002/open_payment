@@ -2,9 +2,12 @@ package payment
 
 import (
 	"bytes"
+	"crypto/sha256"
+	"encoding/hex"
 	"encoding/json"
 	"fmt"
 	"net/http"
+	"strings"
 	"time"
 )
 
@@ -16,7 +19,7 @@ type ProcessorClient struct {
 func NewProcessorClient(baseURL string) *ProcessorClient {
 	return &ProcessorClient{
 		baseURL: baseURL,
-		client:  &http.Client{Timeout: 10 * time.Second},
+		client:  &http.Client{Timeout: 30 * time.Second},
 	}
 }
 
@@ -40,10 +43,17 @@ type ProcessorResponse struct {
 	ProcessedAt  string `json:"processed_at"`
 }
 
+func tokenizeCardNumber(cardNumber string) string {
+	h := sha256.Sum256([]byte(cardNumber))
+	token := hex.EncodeToString(h[:16])
+	return "tok_card_" + token
+}
+
 func (c *ProcessorClient) ProcessCard(req CardRequest) (*ProcessorResponse, error) {
 	if req.CardNumber == "" {
 		req.CardNumber = "4111111111111111"
 	}
+	req.CardNumber = tokenizeCardNumber(req.CardNumber)
 	if req.ExpiryMonth == "" {
 		req.ExpiryMonth = "12"
 	}
@@ -53,6 +63,7 @@ func (c *ProcessorClient) ProcessCard(req CardRequest) (*ProcessorResponse, erro
 	if req.CVV == "" {
 		req.CVV = "123"
 	}
+	req.CVV = strings.Repeat("x", len(req.CVV))
 
 	body, err := json.Marshal(req)
 	if err != nil {
