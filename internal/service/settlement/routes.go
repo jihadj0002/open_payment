@@ -10,4 +10,5 @@ func RegisterSettlementRoutes(r chi.Router, svc *Service, authMW func(http.Handl
 	r.With(authMW).Post("/settlements", HandleTriggerSettlement(svc))
 	r.With(authMW).Get("/settlements", HandleListSettlements(svc))
 	r.With(authMW).Get("/settlements/{id}", HandleGetSettlement(svc))
+	r.With(authMW).Get("/settlements/report", HandleSettlementReport(svc))
 }

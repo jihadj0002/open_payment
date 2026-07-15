@@ -102,6 +102,49 @@ func (r *Repository) GetUnsettledVolume(ctx context.Context, merchantID, currenc
 	return volume, nil
 }
 
+func (r *Repository) GetSettlementReport(ctx context.Context, merchantID, currency string, from, to time.Time) ([]SettlementReportItem, error) {
+	args := []interface{}{merchantID, from, to}
+	argIdx := 4
+
+	sql := `SELECT
+		COALESCE(currency, 'USD') as currency,
+		COALESCE(SUM(amount), 0) as total_volume,
+		COALESCE(SUM(fee), 0) as total_fees,
+		COALESCE(SUM(amount - fee), 0) as total_net,
+		COUNT(*) as transaction_count
+		FROM settlements
+		WHERE merchant_id = $1
+		AND created_at >= $2
+		AND created_at <= $3`
+
+	if currency != "" {
+		sql += fmt.Sprintf(" AND currency = $%d", argIdx)
+		args = append(args, currency)
+		argIdx++
+	}
+
+	sql += " GROUP BY currency ORDER BY currency"
+
+	rows, err := r.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("settlement report: %w", err)
+	}
+	defer rows.Close()
+
+	var items []SettlementReportItem
+	for rows.Next() {
+		var item SettlementReportItem
+		if err := rows.Scan(&item.Currency, &item.TotalVolume, &item.TotalFees, &item.TotalNet, &item.TransactionCount); err != nil {
+			return nil, fmt.Errorf("scan report item: %w", err)
+		}
+		items = append(items, item)
+	}
+	if items == nil {
+		items = []SettlementReportItem{}
+	}
+	return items, rows.Err()
+}
+
 func (r *Repository) UpdateSettlementStatus(ctx context.Context, id, status string) error {
 	now := time.Now()
 	query := `UPDATE settlements SET status = $1, completed_at = $2 WHERE id = $3`

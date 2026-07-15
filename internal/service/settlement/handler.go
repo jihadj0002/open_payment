@@ -1,9 +1,12 @@
 package settlement
 
 import (
+	"encoding/csv"
 	"encoding/json"
+	"fmt"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
@@ -89,5 +92,76 @@ func HandleListSettlements(svc *Service) http.HandlerFunc {
 		}
 
 		api.RespondJSON(w, http.StatusOK, data)
+	}
+}
+
+func HandleSettlementReport(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		claims := auth.GetClaims(r.Context())
+		if claims == nil {
+			api.RespondError(w, http.StatusUnauthorized, "auth_error", "unauthorized", "not authenticated")
+			return
+		}
+
+		fromStr := r.URL.Query().Get("from")
+		toStr := r.URL.Query().Get("to")
+		currency := r.URL.Query().Get("currency")
+
+		from := time.Now().AddDate(0, -1, 0)
+		to := time.Now()
+
+		if fromStr != "" {
+			if t, err := time.Parse("2006-01-02", fromStr); err == nil {
+				from = t
+			}
+		}
+		if toStr != "" {
+			if t, err := time.Parse("2006-01-02", toStr); err == nil {
+				to = t
+			}
+		}
+
+		merchantID := claims.MerchantID
+		if claims.Role == "admin" {
+			if mid := r.URL.Query().Get("merchant_id"); mid != "" {
+				merchantID = mid
+			}
+		}
+
+		report, err := svc.GetSettlementReport(r.Context(), merchantID, currency, from, to)
+		if err != nil {
+			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "failed to generate report")
+			return
+		}
+
+		accept := r.Header.Get("Accept")
+		format := r.URL.Query().Get("format")
+
+		if accept == "text/csv" || format == "csv" {
+			w.Header().Set("Content-Type", "text/csv")
+			w.Header().Set("Content-Disposition", fmt.Sprintf("attachment; filename=settlement-report-%s.csv", time.Now().Format("2006-01-02")))
+			writer := csv.NewWriter(w)
+			writer.Write([]string{"Currency", "Total Volume", "Total Fees", "Total Net", "Transaction Count"})
+			for _, item := range report.Items {
+				writer.Write([]string{
+					item.Currency,
+					strconv.FormatInt(item.TotalVolume, 10),
+					strconv.FormatInt(item.TotalFees, 10),
+					strconv.FormatInt(item.TotalNet, 10),
+					strconv.Itoa(item.TransactionCount),
+				})
+			}
+			writer.Write([]string{
+				"TOTAL",
+				strconv.FormatInt(report.Totals.TotalVolume, 10),
+				strconv.FormatInt(report.Totals.TotalFees, 10),
+				strconv.FormatInt(report.Totals.TotalNet, 10),
+				strconv.Itoa(report.Totals.TransactionCount),
+			})
+			writer.Flush()
+			return
+		}
+
+		api.RespondJSON(w, http.StatusOK, report)
 	}
 }

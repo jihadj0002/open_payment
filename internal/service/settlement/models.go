@@ -21,9 +21,29 @@ type SettlementRequest struct {
     Currency string `json:"currency"`
 }
 
+type SettlementReportItem struct {
+	Currency         string `json:"currency"`
+	TotalVolume      int64  `json:"total_volume"`
+	TotalFees        int64  `json:"total_fees"`
+	TotalNet         int64  `json:"total_net"`
+	TransactionCount int    `json:"transaction_count"`
+}
+
+type SettlementReport struct {
+	From   string                `json:"from"`
+	To     string                `json:"to"`
+	Items  []SettlementReportItem `json:"items"`
+	Totals struct {
+		TotalVolume      int64 `json:"total_volume"`
+		TotalFees        int64 `json:"total_fees"`
+		TotalNet         int64 `json:"total_net"`
+		TransactionCount int   `json:"transaction_count"`
+	} `json:"totals"`
+}
+
 const (
-    StatusPending    = "pending"
-    StatusProcessing = "processing"
-    StatusCompleted  = "completed"
-    StatusFailed     = "failed"
+	StatusPending    = "pending"
+	StatusProcessing = "processing"
+	StatusCompleted  = "completed"
+	StatusFailed     = "failed"
 )

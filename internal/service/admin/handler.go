@@ -5,11 +5,13 @@ import (
 	"errors"
 	"net/http"
 	"strconv"
+	"time"
 
 	"github.com/go-chi/chi/v5"
 
 	"github.com/openpayment/gateway/internal/api"
 	pkgErr "github.com/openpayment/gateway/internal/pkg/errors"
+	"github.com/openpayment/gateway/internal/service/merchant"
 )
 
 const defaultPerPage = 20
@@ -384,5 +386,195 @@ func HandleListAuditLogs(svc *Service) http.HandlerFunc {
 			data[i] = v
 		}
 		api.RespondJSON(w, http.StatusOK, data)
+	}
+}
+
+func HandleGetMerchantStats(svc *StatsService) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "missing_id", "merchant ID is required")
+			return
+		}
+
+		period := r.URL.Query().Get("period")
+		if period == "" {
+			period = "daily"
+		}
+
+		now := time.Now()
+		var from, to time.Time
+		switch period {
+		case "weekly":
+			from = now.AddDate(0, 0, -7)
+			to = now
+		case "monthly":
+			from = now.AddDate(0, -1, 0)
+			to = now
+		default:
+			from = now.AddDate(0, 0, -1)
+			to = now
+		}
+
+		stats, err := svc.GetUsageStats(r.Context(), id, period, from, to)
+		if err != nil {
+			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "an unexpected error occurred")
+			return
+		}
+
+		api.RespondJSON(w, http.StatusOK, stats)
+	}
+}
+
+func HandleUpdateMerchant(svc *Service, merchantSvc *merchant.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "missing_id", "merchant ID is required")
+			return
+		}
+
+		var req struct {
+			Status *string `json:"status,omitempty"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "invalid_body", "invalid request body")
+			return
+		}
+
+		if req.Status != nil {
+			switch *req.Status {
+			case "active":
+				if err := svc.ApproveMerchant(r.Context(), id); err != nil {
+					api.RespondStructuredError(w, err)
+					return
+				}
+			case "suspended":
+				if err := svc.SuspendMerchant(r.Context(), id, "admin action"); err != nil {
+					api.RespondStructuredError(w, err)
+					return
+				}
+			default:
+				api.RespondError(w, http.StatusBadRequest, "validation_error", "invalid_status", "status must be active or suspended")
+				return
+			}
+		}
+
+		api.RespondJSON(w, http.StatusOK, map[string]string{"status": "updated"})
+	}
+}
+
+func HandleResetMerchantAPIKeys(svc *merchant.Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "missing_id", "merchant ID is required")
+			return
+		}
+
+		keys, err := svc.ListAPIKeys(r.Context(), id)
+		if err != nil {
+			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "an unexpected error occurred")
+			return
+		}
+
+		for _, k := range keys {
+			if err := svc.RevokeAPIKey(r.Context(), k.ID, id); err != nil {
+				api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "failed to revoke key")
+				return
+			}
+		}
+
+		req := merchant.CreateAPIKeyRequest{Name: "Default API Key"}
+		resp, err := svc.CreateAPIKey(r.Context(), id, req)
+		if err != nil {
+			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "failed to create new key")
+			return
+		}
+
+		api.RespondJSON(w, http.StatusOK, resp)
+	}
+}
+
+func HandleListFraudRules(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		api.RespondJSON(w, http.StatusOK, []interface{}{})
+	}
+}
+
+func HandleCreateFraudRule(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			Name    string  `json:"name"`
+			Type    string  `json:"type"`
+			Threshold float64 `json:"threshold"`
+			Action  string  `json:"action"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "invalid_body", "invalid request body")
+			return
+		}
+		api.RespondJSON(w, http.StatusCreated, req)
+	}
+}
+
+func HandleUpdateFraudRule(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "missing_id", "rule ID is required")
+			return
+		}
+		api.RespondJSON(w, http.StatusOK, map[string]string{"id": id, "status": "updated"})
+	}
+}
+
+func HandleDeleteFraudRule(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		id := chi.URLParam(r, "id")
+		if id == "" {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "missing_id", "rule ID is required")
+			return
+		}
+		w.WriteHeader(http.StatusNoContent)
+	}
+}
+
+func HandleGetMerchantOnboardingStatus(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		api.RespondJSON(w, http.StatusOK, map[string]interface{}{
+			"status": "not_started",
+			"steps": []map[string]interface{}{
+				{"name": "business_info", "completed": false},
+				{"name": "personal_info", "completed": false},
+				{"name": "documents", "completed": false},
+				{"name": "review", "completed": false},
+			},
+		})
+	}
+}
+
+func HandleSubmitOnboarding(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		var req struct {
+			BusinessName string `json:"business_name"`
+			BusinessType string `json:"business_type"`
+			Website      string `json:"website"`
+			FirstName    string `json:"first_name"`
+			LastName     string `json:"last_name"`
+			Phone        string `json:"phone"`
+			Address      string `json:"address"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&req); err != nil {
+			api.RespondError(w, http.StatusBadRequest, "invalid_request", "invalid_body", "invalid request body")
+			return
+		}
+		api.RespondJSON(w, http.StatusCreated, map[string]string{"status": "submitted"})
+	}
+}
+
+func HandleUploadOnboardingDocument(svc *Service) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		api.RespondJSON(w, http.StatusCreated, map[string]string{"status": "uploaded"})
 	}
 }

@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/openpayment/gateway/internal/api"
+	"github.com/openpayment/gateway/internal/api/monitoring"
 	"github.com/openpayment/gateway/internal/config"
 	"github.com/openpayment/gateway/internal/database"
 	"github.com/openpayment/gateway/internal/pkg/encrypt"
@@ -105,7 +106,14 @@ func main() {
 
 	adminRepo := admin.NewRepository(db)
 	adminSvc := admin.NewService(adminRepo)
-	admin.RegisterAdminRoutes(v1, adminSvc, auth.AuthMiddleware(authSvc))
+
+	statsRepo := admin.NewStatsRepository(db)
+	statsSvc := admin.NewStatsService(statsRepo)
+
+	slaSvc := monitoring.NewSLAService(db.Pool)
+
+	admin.RegisterAdminRoutes(v1, adminSvc, statsSvc, merchantSvc, auth.AuthMiddleware(authSvc))
+	monitoring.RegisterSLARoutes(v1, slaSvc, auth.AuthMiddleware(authSvc))
 
 	settlementRepo := settlement.NewRepository(db)
 	settlementSvc := settlement.NewService(settlementRepo, ledgerSvc)

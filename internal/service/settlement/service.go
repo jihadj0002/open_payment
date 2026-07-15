@@ -79,3 +79,25 @@ func (s *Service) ListSettlements(ctx context.Context, merchantID string, page, 
 	offset := (page - 1) * perPage
 	return s.repo.ListSettlements(ctx, merchantID, perPage, offset)
 }
+
+func (s *Service) GetSettlementReport(ctx context.Context, merchantID, currency string, from, to time.Time) (*SettlementReport, error) {
+	items, err := s.repo.GetSettlementReport(ctx, merchantID, currency, from, to)
+	if err != nil {
+		return nil, err
+	}
+
+	report := &SettlementReport{
+		From:  from.Format("2006-01-02"),
+		To:    to.Format("2006-01-02"),
+		Items: items,
+	}
+
+	for _, item := range items {
+		report.Totals.TotalVolume += item.TotalVolume
+		report.Totals.TotalFees += item.TotalFees
+		report.Totals.TotalNet += item.TotalNet
+		report.Totals.TransactionCount += item.TransactionCount
+	}
+
+	return report, nil
+}

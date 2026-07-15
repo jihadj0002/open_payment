@@ -158,6 +158,44 @@ func (r *Repository) GetDeliveryWebhook(ctx context.Context, webhookID string) (
 	return &e, nil
 }
 
+func (r *Repository) ListDeliveriesByWebhook(ctx context.Context, webhookID, merchantID string) ([]Delivery, error) {
+	rows, err := r.Pool.Query(ctx,
+		`SELECT d.id, d.webhook_id, d.event, d.payload, d.status, d.attempt, d.max_attempts, d.response_code, d.next_attempt_at, d.created_at
+		 FROM webhook_deliveries d
+		 JOIN webhooks w ON w.id = d.webhook_id
+		 WHERE d.webhook_id = $1 AND w.merchant_id = $2
+		 ORDER BY d.created_at DESC`,
+		webhookID, merchantID,
+	)
+	if err != nil {
+		return nil, err
+	}
+	defer rows.Close()
+
+	var deliveries []Delivery
+	for rows.Next() {
+		var d Delivery
+		if err := rows.Scan(&d.ID, &d.WebhookID, &d.Event, &d.Payload, &d.Status, &d.Attempt, &d.MaxAttempts, &d.ResponseCode, &d.NextAttemptAt, &d.CreatedAt); err != nil {
+			return nil, err
+		}
+		deliveries = append(deliveries, d)
+	}
+	return deliveries, rows.Err()
+}
+
+func (r *Repository) GetDeliveryByID(ctx context.Context, id string) (*Delivery, error) {
+	var d Delivery
+	err := r.Pool.QueryRow(ctx,
+		`SELECT id, webhook_id, event, payload, status, attempt, max_attempts, response_code, next_attempt_at, created_at
+		 FROM webhook_deliveries WHERE id = $1`,
+		id,
+	).Scan(&d.ID, &d.WebhookID, &d.Event, &d.Payload, &d.Status, &d.Attempt, &d.MaxAttempts, &d.ResponseCode, &d.NextAttemptAt, &d.CreatedAt)
+	if err != nil {
+		return nil, err
+	}
+	return &d, nil
+}
+
 func (r *Repository) RotateSecret(ctx context.Context, id, currentSecret, newSecret string, expiresAt time.Time) error {
 	_, err := r.Pool.Exec(ctx,
 		`UPDATE webhooks
