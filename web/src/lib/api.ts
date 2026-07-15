@@ -27,6 +27,10 @@ async function request<T>(
     headers['Authorization'] = `Bearer ${token}`
   }
 
+  if (['POST', 'PATCH', 'DELETE'].includes(method)) {
+    headers['Idempotency-Key'] = crypto.randomUUID()
+  }
+
   const response = await fetch(`${BASE_URL}${path}`, {
     method,
     headers,
