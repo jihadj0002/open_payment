@@ -31,7 +31,8 @@ async function request<T>(
     headers['Idempotency-Key'] = crypto.randomUUID()
   }
 
-  const response = await fetch(`${BASE_URL}${path}`, {
+  const apiPath = path.startsWith('/v1') ? path : `/v1${path}`
+  const response = await fetch(`${BASE_URL}${apiPath}`, {
     method,
     headers,
     body: body ? JSON.stringify(body) : undefined,

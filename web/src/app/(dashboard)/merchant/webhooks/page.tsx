@@ -5,6 +5,7 @@ import { Plus, Copy, Check, X } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { DataTable, Column } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/Badge'
+import { RefreshCw } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query-keys'
@@ -59,7 +60,7 @@ export default function WebhooksPage() {
   const [newEvent, setNewEvent] = useState('payment.success')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  const { data: webhooks = [], isLoading } = useQuery({
+  const { data: webhooks = [], isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.webhooks.all,
     queryFn: () => api.get<Webhook[]>('/webhook_endpoints').then(r => r.data),
   })
@@ -136,6 +137,21 @@ export default function WebhooksPage() {
       ),
     },
   ]
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <p className="mb-4 text-slate-400">Failed to load webhooks</p>
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   return (
     <>

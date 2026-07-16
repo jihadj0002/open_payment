@@ -40,7 +40,7 @@ func Load() *Config {
 		DatabaseURL:   getEnv("DATABASE_URL", "postgres://postgres:postgres@localhost:5432/paymentdb?sslmode=disable"),
 		RedisURL:      getEnv("REDIS_URL", "redis://localhost:6379/0"),
 		KafkaBrokers:  getEnv("KAFKA_BROKERS", "localhost:9092"),
-		JWTSecret:     getEnv("JWT_SECRET", "dev-secret-change-in-production"),
+		JWTSecret:     getEnv("JWT_SECRET", ""),
 		Environment:   getEnv("ENVIRONMENT", "development"),
 		EncryptionKey: getEnv("ENCRYPTION_KEY", ""),
 		DBMaxConns:    getEnvInt("DATABASE_MAX_CONNS", 25),

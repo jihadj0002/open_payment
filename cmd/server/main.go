@@ -12,6 +12,7 @@ import (
 	"github.com/rs/zerolog/log"
 
 	"github.com/openpayment/gateway/internal/api"
+	"github.com/openpayment/gateway/internal/api/middleware"
 	"github.com/openpayment/gateway/internal/api/monitoring"
 	"github.com/openpayment/gateway/internal/config"
 	"github.com/openpayment/gateway/internal/database"
@@ -33,16 +34,15 @@ func main() {
 
 	logger.Init(cfg.LogLevel)
 
-	if cfg.EncryptionKey != "" {
-		os.Setenv("ENCRYPTION_KEY", cfg.EncryptionKey)
-		if err := encrypt.Init(); err != nil {
-			log.Warn().Err(err).Msg("encryption initialization failed - sensitive data will not be encrypted")
-		} else {
-			log.Info().Msg("encryption initialized")
-		}
-	} else {
-		log.Warn().Msg("ENCRYPTION_KEY not set - sensitive data will not be encrypted")
+	if cfg.JWTSecret == "" {
+		log.Fatal().Msg("JWT_SECRET is required - set it to a random 64-hex-char string")
 	}
+
+	os.Setenv("ENCRYPTION_KEY", cfg.EncryptionKey)
+	if err := encrypt.Init(); err != nil {
+		log.Fatal().Err(err).Msg("encryption initialization failed - cannot run without encryption")
+	}
+	log.Info().Msg("encryption initialized")
 
 	log.Info().Str("port", cfg.Port).Msg("Starting Open Payment Gateway...")
 
@@ -88,8 +88,10 @@ func main() {
 
 	router := api.NewRouter(cfg, hc)
 
+	authRateLimiter := middleware.NewRateLimiter(10, 20, time.Second)
+
 	v1 := hc.V1
-	auth.RegisterAuthRoutes(v1, authSvc)
+	auth.RegisterAuthRoutes(v1, authSvc, authRateLimiter)
 	merchant.RegisterMerchantRoutes(v1, merchantSvc, auth.AuthMiddleware(authSvc))
 	payment.RegisterPaymentRoutes(v1, paymentSvc, auth.AuthMiddleware(authSvc))
 

@@ -18,14 +18,17 @@ import (
 
 	"github.com/openpayment/gateway/internal/config"
 	"github.com/openpayment/gateway/internal/pkg/encrypt"
+	"github.com/rs/zerolog/log"
 )
 
 var (
-	ErrInvalidToken        = errors.New("invalid token")
-	ErrInvalidAPIKey       = errors.New("invalid API key")
-	ErrInvalidCredentials  = errors.New("invalid email or password")
-	ErrEmailAlreadyExists  = errors.New("email already exists")
+	ErrInvalidToken           = errors.New("invalid token")
+	ErrInvalidAPIKey          = errors.New("invalid API key")
+	ErrInvalidCredentials     = errors.New("invalid email or password")
+	ErrEmailAlreadyExists     = errors.New("email already exists")
 	ErrPublishableKeyNotAllowed = errors.New("publishable keys are not allowed for this operation")
+	ErrInvalidResetToken      = errors.New("invalid or expired reset token")
+	ErrResetTokenUsed         = errors.New("reset token has already been used")
 )
 
 const (
@@ -200,6 +203,86 @@ func (s *AuthService) ValidateAPIKey(key string) (*Claims, error) {
 	}, nil
 }
 
+func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
+	var merchantID string
+	err := s.db.QueryRow(ctx, `SELECT id FROM merchants WHERE email = $1`, email).Scan(&merchantID)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil
+		}
+		return fmt.Errorf("querying merchant: %w", err)
+	}
+
+	tokenBytes := make([]byte, 32)
+	if _, err := rand.Read(tokenBytes); err != nil {
+		return fmt.Errorf("generating reset token: %w", err)
+	}
+	rawToken := hex.EncodeToString(tokenBytes)
+	tokenHash := HashAPIKey(rawToken)
+
+	_, err = s.db.Exec(
+		ctx,
+		`INSERT INTO password_reset_tokens (merchant_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
+		merchantID, tokenHash,
+	)
+	if err != nil {
+		return fmt.Errorf("storing reset token: %w", err)
+	}
+
+	log.Info().Str("merchant_id", merchantID).Str("reset_token", rawToken).Msg("password reset token generated")
+	return nil
+}
+
+func (s *AuthService) ResetPassword(ctx context.Context, token, password string) error {
+	tokenHash := HashAPIKey(token)
+
+	var merchantID string
+	var usedAt *time.Time
+	err := s.db.QueryRow(
+		ctx,
+		`SELECT merchant_id, used_at FROM password_reset_tokens WHERE token_hash = $1 AND expires_at > NOW()`,
+		tokenHash,
+	).Scan(&merchantID, &usedAt)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return ErrInvalidResetToken
+		}
+		return fmt.Errorf("querying reset token: %w", err)
+	}
+
+	if usedAt != nil {
+		return ErrResetTokenUsed
+	}
+
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	if err != nil {
+		return fmt.Errorf("hashing password: %w", err)
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("beginning transaction: %w", err)
+	}
+	defer tx.Rollback(ctx)
+
+	_, err = tx.Exec(ctx, `UPDATE merchants SET password_hash = $1 WHERE id = $2`, string(hashedPassword), merchantID)
+	if err != nil {
+		return fmt.Errorf("updating password: %w", err)
+	}
+
+	_, err = tx.Exec(ctx, `UPDATE password_reset_tokens SET used_at = NOW() WHERE token_hash = $1`, tokenHash)
+	if err != nil {
+		return fmt.Errorf("invalidating token: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("committing transaction: %w", err)
+	}
+
+	log.Info().Str("merchant_id", merchantID).Msg("password reset successful")
+	return nil
+}
+
 func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthResponse, error) {
 	var (
 		id           string
@@ -305,9 +388,6 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*AuthR
 		return nil, fmt.Errorf("committing transaction: %w", err)
 	}
 
-	_ = secretKey
-	_ = pubKey
-
 	tokenPair, err := s.GenerateTokenPair(Claims{
 		MerchantID:  merchantID,
 		Role:        "merchant",
@@ -324,5 +404,7 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*AuthR
 			Role:        "merchant",
 			Permissions: []string{"read", "write"},
 		},
+		SecretKey: secretKey,
+		PublicKey: pubKey,
 	}, nil
 }

@@ -955,6 +955,84 @@ Allow merchants to rotate webhook secrets. Ensure secrets are stored encrypted. 
 
 ---
 
+## Phase 8: Critical Production Fixes
+
+**Status:** 12/12 DONE | **Priority:** CRITICAL | **Assignee:** orchestrator-agent | **Completed:** 2026-07-16
+
+### TASK-PROD-P8-001: Fix /v1/ API prefix mismatch on frontend
+
+**Status:** DONE | **Priority:** CRITICAL
+
+**Description:** Backend registers all routes under `/v1/` prefix. Frontend called 23 of 28 endpoints without `/v1/`. Fixed by prepending `/v1` in `api.ts:34` for paths not already starting with `/v1`. Updated forgot/reset-password pages to use the `api` module instead of raw fetch.
+
+### TASK-PROD-P8-002: Implement forgot/reset password backend endpoints
+
+**Status:** DONE | **Priority:** HIGH
+
+**Description:** Created `POST /auth/forgot-password` and `POST /auth/reset-password` endpoints. Added migration 016 for `password_reset_tokens` table. Implemented service methods, handlers, and route registration.
+
+### TASK-PROD-P8-003: Fix JWT secret — remove default fallback
+
+**Status:** DONE | **Priority:** CRITICAL
+
+**Description:** Changed JWT_SECRET default from `"dev-secret-change-in-production"` to `""`. Added startup validation in `cmd/server/main.go` that logs fatal if JWT_SECRET is empty.
+
+### TASK-PROD-P8-004: Fix encryption key validation
+
+**Status:** DONE | **Priority:** HIGH
+
+**Description:** Changed encryption initialization failure from warning log to `log.Fatal()`. Updated `.env.example` and `.env.local` with proper 64-hex-char keys.
+
+### TASK-PROD-P8-005: Fix API keys not returned to user during registration
+
+**Status:** DONE | **Priority:** HIGH
+
+**Description:** Added `secret_key` and `public_key` fields to `AuthResponse` model. Wired the generated keys through the `Register` service method into the response.
+
+### TASK-PROD-P8-006: Add error boundaries to frontend
+
+**Status:** DONE | **Priority:** MEDIUM
+
+**Description:** Created `error.tsx` at root, `(auth)/`, and `(dashboard)/merchant/` route segments. Each shows branded error message with "Try again" button and console error logging.
+
+### TASK-PROD-P8-007: Add error handling to pages missing it
+
+**Status:** DONE | **Priority:** MEDIUM
+
+**Description:** Updated payments, customers, webhooks, and API keys pages to handle React Query `isError` state with retry buttons and error messages.
+
+### TASK-PROD-P8-008: Add sidebar links for Reports and Fraud
+
+**Status:** DONE | **Priority:** MEDIUM
+
+**Description:** Added Reports (`BarChart3` icon) and Fraud Detection (`ShieldAlert` icon) links to the sidebar in `DashboardLayout.tsx`.
+
+### TASK-PROD-P8-009: Fix Card BIN check fraud rule
+
+**Status:** DONE | **Priority:** CRITICAL
+
+**Description:** Changed `highRiskBINs` from `{"4", "5"}` (flags ALL Visa/Mastercard) to specific test BIN prefixes `{"400000", "411111", "444444", "401288"}`.
+
+### TASK-PROD-P8-010: Add rate limiting to auth endpoints
+
+**Status:** DONE | **Priority:** MEDIUM
+
+**Description:** Applied separate rate limiter (10 req/s, burst 20) to auth routes (login, register, refresh, forgot-password, reset-password) in `auth/routes.go`.
+
+### TASK-PROD-P8-011: Fix auth race condition
+
+**Status:** DONE | **Priority:** MEDIUM
+
+**Description:** Added `just_logged_in` session cookie set on login/register. Middleware skips auth redirect if this cookie is present, then deletes it. Prevents redirect loop before AuthInitializer syncs.
+
+### TASK-PROD-P8-012: Fix DashboardLayout spinner flash
+
+**Status:** DONE | **Priority:** LOW
+
+**Description:** Changed auth store `isLoading` initial state from `true` to `false`. Prevents full-page spinner flash on every dashboard page load.
+
+---
+
 ## Quick Stats
 | Phase | Tasks | Status |
 |-------|-------|--------|
@@ -965,3 +1043,4 @@ Allow merchants to rotate webhook secrets. Ensure secrets are stored encrypted. 
 | Phase 5: P1 (High) | 10 | 10/10 DONE |
 | Phase 6: P2 (Medium) | 9 | 9/9 DONE |
 | Phase 7: P3 (Low) | 7 | 7/7 DONE |
+| Phase 8: Critical Production Fixes | 12 | 12/12 DONE |

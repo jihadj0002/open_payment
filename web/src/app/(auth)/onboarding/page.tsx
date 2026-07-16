@@ -9,7 +9,7 @@ import { api } from '@/lib/api'
 import { Button } from '@/components/ui/Button'
 import { Input } from '@/components/ui/Input'
 import { Card } from '@/components/ui/Card'
-import { Toast } from '@/components/ui/Toast'
+import { toast } from '@/components/ui/Toast'
 
 const businessSchema = z.object({
   business_name: z.string().min(1, 'Business name is required'),
@@ -32,7 +32,7 @@ export default function OnboardingPage() {
   const [step, setStep] = useState<'business' | 'personal' | 'documents' | 'review'>('business')
   const [businessData, setBusinessData] = useState<BusinessData | null>(null)
   const [personalData, setPersonalData] = useState<PersonalData | null>(null)
-  const [toast, setToast] = useState<{ type: 'success' | 'error', message: string } | null>(null)
+  const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null)
 
   const businessForm = useForm<BusinessData>({
     resolver: zodResolver(businessSchema),
@@ -46,10 +46,10 @@ export default function OnboardingPage() {
     mutationFn: (data: BusinessData & PersonalData) =>
       api.post('/merchants/onboarding', data),
     onSuccess: () => {
-      setToast({ type: 'success', message: 'Onboarding submitted successfully!' })
+      toast.success('Onboarding submitted successfully!')
     },
     onError: () => {
-      setToast({ type: 'error', message: 'Failed to submit onboarding. Please try again.' })
+      toast.error('Failed to submit onboarding. Please try again.')
     },
   })
 
@@ -75,12 +75,17 @@ export default function OnboardingPage() {
 
   return (
     <>
-      {toast && (
-        <Toast
-          variant={toast.type}
-          message={toast.message}
-          onClose={() => setToast(null)}
-        />
+      {notification && (
+        <div className={`mb-6 rounded-lg border px-4 py-3 text-sm ${
+          notification.type === 'success'
+            ? 'border-success/20 bg-success/10 text-success'
+            : 'border-danger/20 bg-danger/10 text-danger'
+        }`}>
+          {notification.message}
+          <button onClick={() => setNotification(null)} className="float-right text-sm">
+            ×
+          </button>
+        </div>
       )}
 
       <Card className="p-6">

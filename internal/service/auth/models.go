@@ -18,7 +18,9 @@ type TokenPair struct {
 
 type AuthResponse struct {
 	TokenPair `json:"token_pair"`
-	User      User  `json:"user"`
+	User      User   `json:"user"`
+	SecretKey string `json:"secret_key,omitempty"`
+	PublicKey string `json:"public_key,omitempty"`
 }
 
 type User struct {

@@ -91,7 +91,7 @@ type CardBINCheckRule struct{}
 
 func (r *CardBINCheckRule) Name() string { return "card_bin_check" }
 
-var highRiskBINs = []string{"4", "5"}
+var highRiskBINs = []string{"400000", "411111", "444444", "401288"}
 
 func (r *CardBINCheckRule) Evaluate(ctx context.Context, req *FraudCheckRequest) *RuleResult {
 	bin := extractBIN(req.PaymentMethod)

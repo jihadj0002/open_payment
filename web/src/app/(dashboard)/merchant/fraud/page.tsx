@@ -4,12 +4,12 @@ import { useState } from 'react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { api } from '@/lib/api'
 import { queryKeys } from '@/lib/query-keys'
-import { DataTable } from '@/components/ui/DataTable'
+import { DataTable, Column } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/Badge'
 import { Button } from '@/components/ui/Button'
 import { Modal } from '@/components/ui/Modal'
 import { Skeleton } from '@/components/ui/Skeleton'
-import { Toast } from '@/components/ui/Toast'
+import { toast } from '@/components/ui/Toast'
 import { Plus, ToggleLeft, ToggleRight, Edit, Trash2 } from 'lucide-react'
 
 interface FraudRule {
@@ -34,7 +34,7 @@ export default function FraudRulesPage() {
   const queryClient = useQueryClient()
   const [showCreateModal, setShowCreateModal] = useState(false)
   const [editingRule, setEditingRule] = useState<FraudRule | null>(null)
-  const [toast, setToast] = useState<{ type: 'success' | 'error', message: string } | null>(null)
+  const [notification, setNotification] = useState<{ type: 'success' | 'error', message: string } | null>(null)
 
   const { data: rules, isLoading } = useQuery({
     queryKey: queryKeys.fraud.rules,
@@ -46,10 +46,10 @@ export default function FraudRulesPage() {
       api.patch(`/merchants/fraud/rules/${id}`, { enabled }),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.fraud.rules })
-      setToast({ type: 'success', message: 'Rule updated' })
+      toast.success('Rule updated')
     },
     onError: () => {
-      setToast({ type: 'error', message: 'Failed to update rule' })
+      toast.error('Failed to update rule')
     },
   })
 
@@ -57,45 +57,57 @@ export default function FraudRulesPage() {
     mutationFn: (id: string) => api.delete(`/merchants/fraud/rules/${id}`),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: queryKeys.fraud.rules })
-      setToast({ type: 'success', message: 'Rule deleted' })
+      toast.success('Rule deleted')
     },
     onError: () => {
-      setToast({ type: 'error', message: 'Failed to delete rule' })
+      toast.error('Failed to delete rule')
     },
   })
 
-  const columns = [
-    { key: 'name', header: 'Name' },
-    { key: 'type', header: 'Type' },
-    { key: 'threshold', header: 'Threshold' },
+  const columns: Column<FraudRule>[] = [
+    {
+      key: 'name',
+      header: 'Name',
+      render: (rule: FraudRule) => <span>{rule.name}</span>,
+    },
+    {
+      key: 'type',
+      header: 'Type',
+      render: (rule: FraudRule) => <span>{rule.type}</span>,
+    },
+    {
+      key: 'threshold',
+      header: 'Threshold',
+      render: (rule: FraudRule) => <span>{rule.threshold}</span>,
+    },
     {
       key: 'action',
       header: 'Action',
-      render: (value: string) => (
-        <Badge variant={actionBadgeVariant(value)}>{value}</Badge>
+      render: (rule: FraudRule) => (
+        <Badge variant={actionBadgeVariant(rule.action)}>{rule.action}</Badge>
       ),
     },
     {
       key: 'enabled',
       header: 'Enabled',
-      render: (_: boolean, row: FraudRule) => (
+      render: (rule: FraudRule) => (
         <button
-          onClick={() => toggleMutation.mutate({ id: row.id, enabled: !row.enabled })}
+          onClick={() => toggleMutation.mutate({ id: rule.id, enabled: !rule.enabled })}
           className="text-gray-500 hover:text-blue-600"
         >
-          {row.enabled ? <ToggleRight className="w-5 h-5 text-green-500" /> : <ToggleLeft className="w-5 h-5" />}
+          {rule.enabled ? <ToggleRight className="w-5 h-5 text-green-500" /> : <ToggleLeft className="w-5 h-5" />}
         </button>
       ),
     },
     {
       key: 'actions',
       header: '',
-      render: (_: unknown, row: FraudRule) => (
+      render: (rule: FraudRule) => (
         <div className="flex gap-2">
-          <button onClick={() => setEditingRule(row)} className="text-gray-400 hover:text-blue-600">
+          <button onClick={() => setEditingRule(rule)} className="text-gray-400 hover:text-blue-600">
             <Edit className="w-4 h-4" />
           </button>
-          <button onClick={() => deleteMutation.mutate(row.id)} className="text-gray-400 hover:text-red-600">
+          <button onClick={() => deleteMutation.mutate(rule.id)} className="text-gray-400 hover:text-red-600">
             <Trash2 className="w-4 h-4" />
           </button>
         </div>
@@ -105,12 +117,17 @@ export default function FraudRulesPage() {
 
   return (
     <div className="space-y-6">
-      {toast && (
-        <Toast
-          variant={toast.type}
-          message={toast.message}
-          onClose={() => setToast(null)}
-        />
+      {notification && (
+        <div className={`rounded-lg border px-4 py-3 text-sm ${
+          notification.type === 'success'
+            ? 'border-success/20 bg-success/10 text-success'
+            : 'border-danger/20 bg-danger/10 text-danger'
+        }`}>
+          {notification.message}
+          <button onClick={() => setNotification(null)} className="float-right ml-2 text-sm">
+            ×
+          </button>
+        </div>
       )}
 
       <div className="flex items-center justify-between">
@@ -125,7 +142,7 @@ export default function FraudRulesPage() {
       </div>
 
       {isLoading ? (
-        <Skeleton variant="table" />
+        <Skeleton variant="card" />
       ) : (
         <DataTable
           columns={columns}

@@ -1,7 +1,7 @@
 'use client'
 
 import { useState } from 'react'
-import { Plus, Copy, Check, AlertTriangle, X } from 'lucide-react'
+import { Plus, Copy, Check, AlertTriangle, X, RefreshCw } from 'lucide-react'
 import { useQuery, useMutation, useQueryClient } from '@tanstack/react-query'
 import { DataTable, Column } from '@/components/ui/DataTable'
 import { Badge } from '@/components/ui/Badge'
@@ -51,7 +51,7 @@ export default function ApiKeysPage() {
   const [newKeyName, setNewKeyName] = useState('')
   const [deleteConfirm, setDeleteConfirm] = useState<string | null>(null)
 
-  const { data: keys = [], isLoading } = useQuery({
+  const { data: keys = [], isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.apiKeys.all,
     queryFn: () => api.get<ApiKey[]>('/merchants/api_keys').then(r => r.data),
   })
@@ -126,6 +126,21 @@ export default function ApiKeysPage() {
         ) : null,
     },
   ]
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <p className="mb-4 text-slate-400">Failed to load API keys</p>
+        <button
+          onClick={() => refetch()}
+          className="flex items-center gap-2 rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
+        >
+          <RefreshCw className="h-4 w-4" />
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   return (
     <>

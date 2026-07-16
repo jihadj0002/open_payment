@@ -7,6 +7,7 @@ import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
+import { api } from '@/lib/api'
 
 const forgotSchema = z.object({
   email: z.string().email('Invalid email address'),
@@ -29,15 +30,7 @@ export default function ForgotPasswordPage() {
   const onSubmit = async (data: ForgotForm) => {
     setIsSubmitting(true)
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/auth/forgot-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify(data),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: 'Request failed' }))
-        throw new Error(err.message || 'Failed to send reset email')
-      }
+      await api.post('/auth/forgot-password', data)
       setSubmitted(true)
       toast.success('Reset link sent to your email')
     } catch (err: unknown) {

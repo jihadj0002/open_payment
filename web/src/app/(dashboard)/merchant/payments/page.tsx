@@ -29,7 +29,7 @@ interface PaymentsResponse {
 export default function PaymentsPage() {
   const [page, setPage] = useState(1)
 
-  const { data, isLoading } = useQuery({
+  const { data, isLoading, isError, refetch } = useQuery({
     queryKey: queryKeys.payments.list({ page: String(page), limit: '10' }),
     queryFn: () => api.get<PaymentsResponse>(`/payments?page=${page}&limit=10`).then(r => r.data),
   })
@@ -75,6 +75,20 @@ export default function PaymentsPage() {
       render: (p) => new Date(p.created_at).toLocaleDateString(),
     },
   ]
+
+  if (isError) {
+    return (
+      <div className="flex flex-col items-center justify-center py-20">
+        <p className="mb-4 text-slate-400">Failed to load payments</p>
+        <button
+          onClick={() => refetch()}
+          className="rounded-lg bg-primary px-4 py-2 text-sm font-medium text-white transition-colors hover:bg-primary-700"
+        >
+          Retry
+        </button>
+      </div>
+    )
+  }
 
   return (
     <>

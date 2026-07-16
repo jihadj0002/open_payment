@@ -7,6 +7,10 @@ function setCookie(name: string, value: string, days = 7) {
   document.cookie = `${name}=${encodeURIComponent(value)}; expires=${expires}; path=/; SameSite=Lax`
 }
 
+function setSessionCookie(name: string, value: string) {
+  document.cookie = `${name}=${encodeURIComponent(value)}; path=/; SameSite=Lax`
+}
+
 function removeCookie(name: string) {
   document.cookie = `${name}=; expires=Thu, 01 Jan 1970 00:00:00 GMT; path=/; SameSite=Lax`
 }
@@ -37,13 +41,14 @@ export const useAuthStore = create<AuthState>()(
       user: null,
       token: null,
       isAuthenticated: false,
-      isLoading: true,
+      isLoading: false,
 
       login: async (email: string, password: string) => {
         const res = await api.post<{ token_pair: { access_token: string }; user: User }>('/auth/login', { email, password })
         const token = res.data.token_pair.access_token
         localStorage.setItem('auth_token', token)
         setCookie('auth_token', token)
+        setSessionCookie('just_logged_in', '1')
         set({ user: res.data.user, token, isAuthenticated: true })
       },
 
@@ -52,6 +57,7 @@ export const useAuthStore = create<AuthState>()(
         const token = res.data.token_pair.access_token
         localStorage.setItem('auth_token', token)
         setCookie('auth_token', token)
+        setSessionCookie('just_logged_in', '1')
         set({ user: res.data.user, token, isAuthenticated: true })
       },
 

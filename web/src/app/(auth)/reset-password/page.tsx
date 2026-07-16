@@ -8,6 +8,7 @@ import { z } from 'zod'
 import { zodResolver } from '@hookform/resolvers/zod'
 import { Loader2, ArrowLeft } from 'lucide-react'
 import { toast } from '@/components/ui/Toast'
+import { api, APIError } from '@/lib/api'
 
 const resetSchema = z
   .object({
@@ -42,19 +43,11 @@ function ResetForm() {
     }
     setIsSubmitting(true)
     try {
-      const res = await fetch(`${process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'}/auth/reset-password`, {
-        method: 'POST',
-        headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ token, password: data.password }),
-      })
-      if (!res.ok) {
-        const err = await res.json().catch(() => ({ message: 'Reset failed' }))
-        throw new Error(err.message || 'Failed to reset password')
-      }
+      await api.post('/auth/reset-password', { token, password: data.password })
       toast.success('Password reset successfully')
       router.push('/login')
     } catch (err: unknown) {
-      const e = err as { message?: string }
+      const e = err as APIError
       toast.error(e.message || 'Failed to reset password')
     } finally {
       setIsSubmitting(false)

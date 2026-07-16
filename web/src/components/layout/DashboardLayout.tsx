@@ -4,7 +4,7 @@ import { useEffect } from 'react'
 import { useRouter, usePathname } from 'next/navigation'
 import Link from 'next/link'
 import { useAuth } from '@/context/AuthContext'
-import { LayoutDashboard, CreditCard, Key, LogOut, Loader2, Users, RotateCcw, Wallet, Settings, Webhook } from 'lucide-react'
+import { LayoutDashboard, CreditCard, Key, LogOut, Loader2, Users, RotateCcw, Wallet, Settings, Webhook, BarChart3, ShieldAlert } from 'lucide-react'
 
 const sidebarLinks = [
   { label: 'Dashboard', href: '/merchant/dashboard', icon: LayoutDashboard },
@@ -12,6 +12,8 @@ const sidebarLinks = [
   { label: 'Refunds', href: '/merchant/payments/refunds', icon: RotateCcw },
   { label: 'Customers', href: '/merchant/customers', icon: Users },
   { label: 'Balance', href: '/merchant/balance', icon: Wallet },
+  { label: 'Reports', href: '/merchant/reports', icon: BarChart3 },
+  { label: 'Fraud Detection', href: '/merchant/fraud', icon: ShieldAlert },
   { label: 'API Keys', href: '/merchant/api-keys', icon: Key },
   { label: 'Webhooks', href: '/merchant/webhooks', icon: Webhook },
   { label: 'Settings', href: '/merchant/settings', icon: Settings },
