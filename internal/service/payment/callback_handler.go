@@ -11,11 +11,69 @@ import (
 	"encoding/pem"
 	"fmt"
 	"io"
+	"net"
 	"net/http"
+	"net/url"
+	"regexp"
 	"strings"
+	"time"
 
 	"github.com/openpayment/gateway/internal/api"
+	"github.com/rs/zerolog/log"
 )
+
+var snsCertURLPattern = regexp.MustCompile(`^https://sns\.([a-z0-9-]+)\.amazonaws\.com(/.*)?$`)
+
+func validateSNSURL(rawURL string) error {
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return fmt.Errorf("invalid URL: %w", err)
+	}
+	if u.Scheme != "https" {
+		return fmt.Errorf("URL scheme must be HTTPS, got %s", u.Scheme)
+	}
+	if !snsCertURLPattern.MatchString(rawURL) {
+		return fmt.Errorf("URL does not match AWS SNS pattern: %s", rawURL)
+	}
+	return nil
+}
+
+func isSafeRedirectURL(rawURL string) bool {
+	if rawURL == "" {
+		return false
+	}
+	u, err := url.Parse(rawURL)
+	if err != nil {
+		return false
+	}
+
+	switch u.Scheme {
+	case "https":
+	case "http":
+		host, _, err := net.SplitHostPort(u.Host)
+		if err != nil {
+			host = u.Host
+		}
+		if host != "localhost" && host != "127.0.0.1" && host != "::1" {
+			return false
+		}
+	default:
+		return false
+	}
+
+	host, _, err := net.SplitHostPort(u.Host)
+	if err != nil {
+		host = u.Host
+	}
+	ip := net.ParseIP(host)
+	if ip != nil {
+		if ip.IsLoopback() || ip.IsPrivate() || ip.IsUnspecified() {
+			return false
+		}
+	}
+
+	return true
+}
 
 func HandleBkashCallback(svc *Service) http.HandlerFunc {
 	return func(w http.ResponseWriter, r *http.Request) {
@@ -38,7 +96,7 @@ func HandleBkashCallback(svc *Service) http.HandlerFunc {
 		if status == "success" {
 			if err := svc.HandleWalletCallback(r.Context(), pi.ID, status, bkashPaymentID); err != nil {
 				redirectURL := pi.CancelURL
-				if redirectURL != nil && *redirectURL != "" {
+				if redirectURL != nil && *redirectURL != "" && isSafeRedirectURL(*redirectURL+"?status=failed") {
 					http.Redirect(w, r, *redirectURL+"?status=failed&error="+err.Error(), http.StatusTemporaryRedirect)
 					return
 				}
@@ -46,7 +104,7 @@ func HandleBkashCallback(svc *Service) http.HandlerFunc {
 				return
 			}
 
-			if pi.ReturnURL != nil && *pi.ReturnURL != "" {
+			if pi.ReturnURL != nil && *pi.ReturnURL != "" && isSafeRedirectURL(*pi.ReturnURL+"?status=success") {
 				http.Redirect(w, r, *pi.ReturnURL+"?status=success&payment_intent="+pi.ID, http.StatusTemporaryRedirect)
 				return
 			}
@@ -56,7 +114,7 @@ func HandleBkashCallback(svc *Service) http.HandlerFunc {
 
 		if status == "cancel" {
 			svc.HandleWalletCallback(r.Context(), pi.ID, "cancel", "")
-			if pi.CancelURL != nil && *pi.CancelURL != "" {
+			if pi.CancelURL != nil && *pi.CancelURL != "" && isSafeRedirectURL(*pi.CancelURL+"?status=canceled") {
 				http.Redirect(w, r, *pi.CancelURL+"?status=canceled&payment_intent="+pi.ID, http.StatusTemporaryRedirect)
 				return
 			}
@@ -64,7 +122,7 @@ func HandleBkashCallback(svc *Service) http.HandlerFunc {
 			return
 		}
 
-		if pi.CancelURL != nil && *pi.CancelURL != "" {
+		if pi.CancelURL != nil && *pi.CancelURL != "" && isSafeRedirectURL(*pi.CancelURL+"?status=failed") {
 			http.Redirect(w, r, *pi.CancelURL+"?status=failed&payment_intent="+pi.ID, http.StatusTemporaryRedirect)
 			return
 		}
@@ -165,7 +223,12 @@ func buildSNSStringToSign(notif *BkashSNSNotification) string {
 }
 
 func verifySNSMessage(notif *BkashSNSNotification) error {
-	certResp, err := http.Get(notif.SigningCertURL)
+	if err := validateSNSURL(notif.SigningCertURL); err != nil {
+		return fmt.Errorf("invalid signing cert URL: %w", err)
+	}
+
+	client := &http.Client{Timeout: 5 * time.Second}
+	certResp, err := client.Get(notif.SigningCertURL)
 	if err != nil {
 		return fmt.Errorf("fetch signing cert: %w", err)
 	}
@@ -243,9 +306,17 @@ func HandleBkashWebhook(svc *Service) http.HandlerFunc {
 
 		if snsMsgType == "SubscriptionConfirmation" {
 			if notif.SubscribeURL != "" {
-				go func() {
-					http.Get(notif.SubscribeURL)
-				}()
+				if err := validateSNSURL(notif.SubscribeURL); err != nil {
+					log.Error().Err(err).Str("url", notif.SubscribeURL).Msg("invalid SubscribeURL")
+				} else {
+					confirmClient := &http.Client{Timeout: 5 * time.Second}
+					resp, err := confirmClient.Get(notif.SubscribeURL)
+					if err != nil {
+						log.Error().Err(err).Str("url", notif.SubscribeURL).Msg("failed to confirm SNS subscription")
+					} else {
+						resp.Body.Close()
+					}
+				}
 			}
 			api.RespondJSON(w, http.StatusOK, map[string]string{"status": "ok"})
 			return

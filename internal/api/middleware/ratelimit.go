@@ -7,12 +7,16 @@ import (
 	"time"
 )
 
+type Limiter interface {
+	Allow(key string) (bool, int64, int64)
+}
+
 type bucket struct {
 	tokens    int64
 	lastRefill time.Time
 }
 
-type RateLimiter struct {
+type MemoryRateLimiter struct {
 	mu        sync.RWMutex
 	buckets   map[string]*bucket
 	rate      int64
@@ -20,8 +24,8 @@ type RateLimiter struct {
 	refillDur time.Duration
 }
 
-func NewRateLimiter(rate, burst int64, refillDur time.Duration) *RateLimiter {
-	return &RateLimiter{
+func NewMemoryRateLimiter(rate, burst int64, refillDur time.Duration) *MemoryRateLimiter {
+	return &MemoryRateLimiter{
 		buckets:   make(map[string]*bucket),
 		rate:      rate,
 		burst:     burst,
@@ -29,7 +33,7 @@ func NewRateLimiter(rate, burst int64, refillDur time.Duration) *RateLimiter {
 	}
 }
 
-func (rl *RateLimiter) allow(key string) (bool, int64, int64) {
+func (rl *MemoryRateLimiter) Allow(key string) (bool, int64, int64) {
 	rl.mu.Lock()
 	defer rl.mu.Unlock()
 
@@ -66,12 +70,12 @@ func min(a, b int64) int64 {
 	return b
 }
 
-func RateLimit(limiter *RateLimiter) func(http.Handler) http.Handler {
+func RateLimit(limiter Limiter) func(http.Handler) http.Handler {
 	return func(next http.Handler) http.Handler {
 		return http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 			key := r.RemoteAddr
 
-			allowed, remaining, limit := limiter.allow(key)
+			allowed, remaining, limit := limiter.Allow(key)
 			w.Header().Set("X-RateLimit-Limit", formatInt(limit))
 			w.Header().Set("X-RateLimit-Remaining", formatInt(remaining))
 

@@ -19,6 +19,8 @@ EXPOSE 8080
 
 USER appuser
 
+# Liveness probe: /health checks overall health (DB, etc.)
+# Readiness probe: /ready checks if the app is ready for traffic (use in orchestrator)
 HEALTHCHECK --interval=30s --timeout=3s --start-period=5s --retries=3 \
   CMD wget --no-verbose --tries=1 --spider http://localhost:8080/health || exit 1
 

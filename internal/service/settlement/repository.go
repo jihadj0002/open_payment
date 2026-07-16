@@ -107,23 +107,25 @@ func (r *Repository) GetSettlementReport(ctx context.Context, merchantID, curren
 	argIdx := 4
 
 	sql := `SELECT
-		COALESCE(currency, 'USD') as currency,
-		COALESCE(SUM(amount), 0) as total_volume,
-		COALESCE(SUM(fee), 0) as total_fees,
-		COALESCE(SUM(amount - fee), 0) as total_net,
+		COALESCE(t.currency, 'USD') as currency,
+		COALESCE(SUM(t.amount), 0) as total_volume,
+		COALESCE(SUM(t.fee), 0) as total_fees,
+		COALESCE(SUM(t.net_amount), 0) as total_net,
 		COUNT(*) as transaction_count
-		FROM settlements
-		WHERE merchant_id = $1
-		AND created_at >= $2
-		AND created_at <= $3`
+		FROM transactions t
+		WHERE t.merchant_id = $1
+		AND t.created_at >= $2
+		AND t.created_at <= $3
+		AND t.type = 'capture'
+		AND t.status = 'succeeded'`
 
 	if currency != "" {
-		sql += fmt.Sprintf(" AND currency = $%d", argIdx)
+		sql += fmt.Sprintf(" AND t.currency = $%d", argIdx)
 		args = append(args, currency)
 		argIdx++
 	}
 
-	sql += " GROUP BY currency ORDER BY currency"
+	sql += " GROUP BY t.currency ORDER BY t.currency"
 
 	rows, err := r.Pool.Query(ctx, sql, args...)
 	if err != nil {
@@ -136,6 +138,44 @@ func (r *Repository) GetSettlementReport(ctx context.Context, merchantID, curren
 		var item SettlementReportItem
 		if err := rows.Scan(&item.Currency, &item.TotalVolume, &item.TotalFees, &item.TotalNet, &item.TransactionCount); err != nil {
 			return nil, fmt.Errorf("scan report item: %w", err)
+		}
+		items = append(items, item)
+	}
+	if items == nil {
+		items = []SettlementReportItem{}
+	}
+	return items, rows.Err()
+}
+
+func (r *Repository) GetSettlementTransactions(ctx context.Context, settlementID string) ([]SettlementReportItem, error) {
+	args := []interface{}{settlementID}
+
+	sql := `SELECT
+		COALESCE(t.currency, 'USD') as currency,
+		COALESCE(SUM(t.amount), 0) as total_volume,
+		COALESCE(SUM(t.fee), 0) as total_fees,
+		COALESCE(SUM(t.net_amount), 0) as total_net,
+		COUNT(*) as transaction_count
+		FROM transactions t
+		JOIN settlements s ON s.merchant_id = t.merchant_id
+		WHERE s.id = $1
+		AND t.created_at >= s.period_start
+		AND t.created_at <= s.period_end
+		AND t.type = 'capture'
+		AND t.status = 'succeeded'
+		GROUP BY t.currency ORDER BY t.currency`
+
+	rows, err := r.Pool.Query(ctx, sql, args...)
+	if err != nil {
+		return nil, fmt.Errorf("settlement transactions: %w", err)
+	}
+	defer rows.Close()
+
+	var items []SettlementReportItem
+	for rows.Next() {
+		var item SettlementReportItem
+		if err := rows.Scan(&item.Currency, &item.TotalVolume, &item.TotalFees, &item.TotalNet, &item.TransactionCount); err != nil {
+			return nil, fmt.Errorf("scan settlement transaction: %w", err)
 		}
 		items = append(items, item)
 	}

@@ -1,6 +1,10 @@
 package payment
 
-import "context"
+import (
+	"context"
+
+	"github.com/jackc/pgx/v5"
+)
 
 type PaymentRepository interface {
 	CreatePaymentIntent(ctx context.Context, pi *PaymentIntent) error
@@ -15,6 +19,16 @@ type PaymentRepository interface {
 	GetPaymentIntentByProviderRef(ctx context.Context, providerRef string) (*PaymentIntent, error)
 	CreateTransaction(ctx context.Context, tx *Transaction) error
 	ListStatusHistory(ctx context.Context, paymentIntentID string) ([]StatusHistoryEntry, error)
+
+	Begin(ctx context.Context) (pgx.Tx, error)
+	GetPaymentIntentForUpdate(ctx context.Context, id, merchantID string) (*PaymentIntent, error)
+	CountPaymentIntents(ctx context.Context, merchantID string) (int, error)
+	UpdatePaymentIntentStatusTx(ctx context.Context, tx pgx.Tx, id, status string) error
+	UpdatePaymentIntentCaptureTx(ctx context.Context, tx pgx.Tx, id string, amountCapturable, amountReceived int64, status string) error
+	UpdatePaymentIntentProviderTx(ctx context.Context, tx pgx.Tx, id, providerRef, redirectURL string) error
+	UpdatePaymentIntentRedirectTx(ctx context.Context, tx pgx.Tx, id, redirectURL string) error
+	CreateTransactionTx(ctx context.Context, tx pgx.Tx, txModel *Transaction) error
+	GetPaymentIntentForUpdateTx(ctx context.Context, tx pgx.Tx, id, merchantID string) (*PaymentIntent, error)
 }
 
 type Processor interface {
@@ -71,4 +85,8 @@ type WebhookService interface {
 type LedgerService interface {
 	RecordPayment(ctx context.Context, merchantID, transactionID, currency string, amount, fee int64) error
 	RecordRefund(ctx context.Context, merchantID, transactionID, currency string, amount int64) error
+}
+
+type Auditor interface {
+	Log(ctx context.Context, actorID, action, resourceType, resourceID, details string) error
 }

@@ -8,6 +8,7 @@ import (
 	"testing"
 	"time"
 
+	"github.com/jackc/pgx/v5"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
 
@@ -89,6 +90,64 @@ func (m *mockRepo) GetPaymentIntentByProviderRef(ctx context.Context, providerRe
 	}
 	return args.Get(0).(*PaymentIntent), args.Error(1)
 }
+
+func (m *mockRepo) Begin(ctx context.Context) (pgx.Tx, error) {
+	args := m.Called(ctx)
+	return args.Get(0).(pgx.Tx), args.Error(1)
+}
+
+func (m *mockRepo) GetPaymentIntentForUpdate(ctx context.Context, id, merchantID string) (*PaymentIntent, error) {
+	args := m.Called(ctx, id, merchantID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*PaymentIntent), args.Error(1)
+}
+
+func (m *mockRepo) GetPaymentIntentForUpdateTx(ctx context.Context, tx pgx.Tx, id, merchantID string) (*PaymentIntent, error) {
+	args := m.Called(ctx, tx, id, merchantID)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*PaymentIntent), args.Error(1)
+}
+
+func (m *mockRepo) CountPaymentIntents(ctx context.Context, merchantID string) (int, error) {
+	args := m.Called(ctx, merchantID)
+	return args.Int(0), args.Error(1)
+}
+
+func (m *mockRepo) UpdatePaymentIntentStatusTx(ctx context.Context, tx pgx.Tx, id, status string) error {
+	args := m.Called(ctx, tx, id, status)
+	return args.Error(0)
+}
+
+func (m *mockRepo) UpdatePaymentIntentCaptureTx(ctx context.Context, tx pgx.Tx, id string, amountCapturable, amountReceived int64, status string) error {
+	args := m.Called(ctx, tx, id, amountCapturable, amountReceived, status)
+	return args.Error(0)
+}
+
+func (m *mockRepo) UpdatePaymentIntentProviderTx(ctx context.Context, tx pgx.Tx, id, providerRef, redirectURL string) error {
+	args := m.Called(ctx, tx, id, providerRef, redirectURL)
+	return args.Error(0)
+}
+
+func (m *mockRepo) UpdatePaymentIntentRedirectTx(ctx context.Context, tx pgx.Tx, id, redirectURL string) error {
+	args := m.Called(ctx, tx, id, redirectURL)
+	return args.Error(0)
+}
+
+func (m *mockRepo) CreateTransactionTx(ctx context.Context, tx pgx.Tx, txModel *Transaction) error {
+	args := m.Called(ctx, tx, txModel)
+	return args.Error(0)
+}
+
+type noopTx struct {
+	pgx.Tx
+}
+
+func (noopTx) Commit(ctx context.Context) error  { return nil }
+func (noopTx) Rollback(ctx context.Context) error { return nil }
 
 type mockProcessor struct {
 	mock.Mock
@@ -260,8 +319,9 @@ func TestCapturePayment_Success(t *testing.T) {
 	}
 
 	repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
-	repo.On("UpdatePaymentIntentCapture", mock.Anything, "pi_1", int64(0), int64(1000), StatusSucceeded).Return(nil).Once()
-	repo.On("CreateTransaction", mock.Anything, mock.MatchedBy(func(tx *Transaction) bool {
+	repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
+	repo.On("UpdatePaymentIntentCaptureTx", mock.Anything, mock.Anything, "pi_1", int64(0), int64(1000), StatusSucceeded).Return(nil).Once()
+	repo.On("CreateTransactionTx", mock.Anything, mock.Anything, mock.MatchedBy(func(tx *Transaction) bool {
 		return tx.PaymentIntentID == "pi_1" && tx.Type == "capture" && tx.Amount == int64(1000)
 	})).Return(nil).Once()
 
@@ -305,6 +365,7 @@ func TestCapturePayment_InvalidState(t *testing.T) {
 				Status: tt.status,
 			}
 			repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
+			repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
 
 			result, err := svc.CapturePayment(context.Background(), "pi_1", merchantID, nil, nil)
 			assert.Error(t, err)
@@ -332,10 +393,11 @@ func TestRefundPayment_Success(t *testing.T) {
 	}
 
 	repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
-	repo.On("CreateTransaction", mock.Anything, mock.MatchedBy(func(tx *Transaction) bool {
+	repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
+	repo.On("CreateTransactionTx", mock.Anything, mock.Anything, mock.MatchedBy(func(tx *Transaction) bool {
 		return tx.PaymentIntentID == "pi_1" && tx.Type == "refund" && tx.Amount == int64(1000)
 	})).Return(nil).Once()
-	repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_1", StatusRefunded).Return(nil).Once()
+	repo.On("UpdatePaymentIntentStatusTx", mock.Anything, mock.Anything, "pi_1", StatusRefunded).Return(nil).Once()
 
 		tx, err := svc.RefundPayment(context.Background(), "pi_1", merchantID, 0, "customer request", nil)
 	assert.NoError(t, err)
@@ -374,6 +436,7 @@ func TestRefundPayment_InvalidState(t *testing.T) {
 				Status: tt.status,
 			}
 			repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
+			repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
 
 			tx, err := svc.RefundPayment(context.Background(), "pi_1", merchantID, 100, "test", nil)
 			assert.Error(t, err)
@@ -411,8 +474,9 @@ func TestVoidPayment_Success(t *testing.T) {
 			}
 
 			repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
-			repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_1", StatusCanceled).Return(nil).Once()
-			repo.On("CreateTransaction", mock.Anything, mock.MatchedBy(func(tx *Transaction) bool {
+			repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
+			repo.On("UpdatePaymentIntentStatusTx", mock.Anything, mock.Anything, "pi_1", StatusCanceled).Return(nil).Once()
+			repo.On("CreateTransactionTx", mock.Anything, mock.Anything, mock.MatchedBy(func(tx *Transaction) bool {
 				return tx.PaymentIntentID == "pi_1" && tx.Type == "void"
 			})).Return(nil).Once()
 
@@ -454,6 +518,7 @@ func TestVoidPayment_InvalidState(t *testing.T) {
 				Status: tt.status,
 			}
 			repo.On("GetPaymentIntent", mock.Anything, "pi_1", merchantID).Return(pi, nil).Once()
+			repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
 
 			result, err := svc.VoidPayment(context.Background(), "pi_1", merchantID, nil)
 			assert.Error(t, err)
@@ -492,8 +557,9 @@ func TestProcessPayment_ProcessorSuccess(t *testing.T) {
 
 	repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_1", StatusProcessing).Return(nil).Once()
 	proc.On("ProcessCard", mock.Anything).Return(procResp, nil).Once()
-	repo.On("UpdatePaymentIntentCapture", mock.Anything, "pi_1", int64(0), int64(1000), StatusCaptured).Return(nil).Once()
-	repo.On("CreateTransaction", mock.Anything, mock.MatchedBy(func(tx *Transaction) bool {
+	repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
+	repo.On("UpdatePaymentIntentCaptureTx", mock.Anything, mock.Anything, "pi_1", int64(0), int64(1000), StatusCaptured).Return(nil).Once()
+	repo.On("CreateTransactionTx", mock.Anything, mock.Anything, mock.MatchedBy(func(tx *Transaction) bool {
 		return tx.PaymentIntentID == "pi_1" && tx.Type == "capture" && tx.Status == "succeeded" && tx.Fee == 30
 	})).Return(nil).Once()
 
@@ -531,7 +597,8 @@ func TestProcessPayment_ProcessorFailure(t *testing.T) {
 
 	repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_1", StatusProcessing).Return(nil).Once()
 	proc.On("ProcessCard", mock.Anything).Return(procResp, nil).Once()
-	repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_1", StatusFailed).Return(nil).Once()
+	repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
+	repo.On("UpdatePaymentIntentStatusTx", mock.Anything, mock.Anything, "pi_1", StatusFailed).Return(nil).Once()
 
 	err := svc.ProcessPayment(context.Background(), pi)
 	assert.Error(t, err)
@@ -559,7 +626,8 @@ func TestProcessPayment_ProcessorServerError(t *testing.T) {
 
 	repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_2", StatusProcessing).Return(nil).Once()
 	proc.On("ProcessCard", mock.Anything).Return(nil, errors.New("connection refused")).Once()
-	repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_2", StatusFailed).Return(nil).Once()
+	repo.On("Begin", mock.Anything).Return(&noopTx{}, nil).Once()
+	repo.On("UpdatePaymentIntentStatusTx", mock.Anything, mock.Anything, "pi_2", StatusFailed).Return(nil).Once()
 
 	err := svc.ProcessPayment(context.Background(), pi)
 	assert.Error(t, err)
@@ -594,9 +662,11 @@ func TestListPayments_DefaultPagination(t *testing.T) {
 	svc := NewService(repo, proc)
 
 	repo.On("ListPaymentIntents", mock.Anything, "merch_1", 10, 0).Return([]PaymentIntent{}, nil).Once()
+	repo.On("CountPaymentIntents", mock.Anything, "merch_1").Return(0, nil).Once()
 
-	pis, err := svc.ListPayments(context.Background(), "merch_1", 0, -1)
+	result, err := svc.ListPayments(context.Background(), "merch_1", 0, -1)
 	assert.NoError(t, err)
-	assert.NotNil(t, pis)
+	assert.NotNil(t, result)
+	assert.Equal(t, 0, result.Total)
 	repo.AssertExpectations(t)
 }

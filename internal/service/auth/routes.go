@@ -6,7 +6,7 @@ import (
 	"github.com/openpayment/gateway/internal/api/middleware"
 )
 
-func RegisterAuthRoutes(r chi.Router, authService *AuthService, rateLimiter *middleware.RateLimiter) {
+func RegisterAuthRoutes(r chi.Router, authService *AuthService, rateLimiter middleware.Limiter) {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RateLimit(rateLimiter))
 		r.Post("/auth/login", LoginHandler(authService))

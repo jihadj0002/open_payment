@@ -9,6 +9,7 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
 	"github.com/openpayment/gateway/internal/api"
@@ -68,7 +69,10 @@ func main() {
 		log.Fatal().Err(err).Msg("failed to run migrations")
 	}
 
-	authSvc := auth.NewAuthService(cfg, db.Pool)
+	adminRepo := admin.NewRepository(db)
+	adminSvc := admin.NewService(adminRepo)
+
+	authSvc := auth.NewAuthService(cfg, db.Pool).WithAuditor(adminSvc)
 	merchantRepo := merchant.NewRepository(db)
 	merchantSvc := merchant.NewService(merchantRepo)
 
@@ -81,7 +85,8 @@ func main() {
 	paymentRepo := payment.NewRepository(db)
 	paymentSvc := payment.NewService(paymentRepo, payment.NewProcessorClient("http://mock-processor:9000")).
 		WithWebhook(webhookSvc).
-		WithLedger(ledgerSvc)
+		WithLedger(ledgerSvc).
+		WithAuditor(adminSvc)
 
 	bkashAppKey := os.Getenv("BKASH_APP_KEY")
 	bkashAppSecret := os.Getenv("BKASH_APP_SECRET")
@@ -145,15 +150,39 @@ func main() {
 		log.Info().Msg("mock wallet provider initialized")
 	}
 
+	statsRepo := admin.NewStatsRepository(db)
+	statsSvc := admin.NewStatsService(statsRepo)
+
+	apiUsageMW := middleware.NewAPIUsageMiddleware(statsSvc, func(ctx context.Context) string {
+		claims := auth.GetClaims(ctx)
+		if claims != nil {
+			return claims.MerchantID
+		}
+		return ""
+	})
+
 	hc := &api.HealthChecker{
-		DB:      db.Pool,
-		Uptime:  time.Now(),
-		Version: "1.0.0",
+		DB:         db.Pool,
+		Uptime:     time.Now(),
+		Version:    "1.0.0",
+		APIUsageMW: apiUsageMW,
 	}
 
 	router := api.NewRouter(cfg, hc)
 
-	authRateLimiter := middleware.NewRateLimiter(10, 20, time.Second)
+	var authRateLimiter middleware.Limiter
+	if cfg.RedisURL != "" {
+		opts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			log.Warn().Err(err).Msg("invalid REDIS_URL, falling back to in-memory auth rate limiter")
+			authRateLimiter = middleware.NewMemoryRateLimiter(10, 20, time.Second)
+		} else {
+			rdb := redis.NewClient(opts)
+			authRateLimiter = middleware.NewRedisRateLimiter(rdb, 20, time.Second)
+		}
+	} else {
+		authRateLimiter = middleware.NewMemoryRateLimiter(10, 20, time.Second)
+	}
 
 	v1 := hc.V1
 	auth.RegisterAuthRoutes(v1, authSvc, authRateLimiter)
@@ -175,12 +204,6 @@ func main() {
 	fraudSvc := fraud.NewService(fraudRepo)
 	fraud.RegisterFraudRoutes(v1, fraudSvc, auth.AuthMiddleware(authSvc))
 
-	adminRepo := admin.NewRepository(db)
-	adminSvc := admin.NewService(adminRepo)
-
-	statsRepo := admin.NewStatsRepository(db)
-	statsSvc := admin.NewStatsService(statsRepo)
-
 	slaSvc := monitoring.NewSLAService(db.Pool)
 
 	admin.RegisterAdminRoutes(v1, adminSvc, statsSvc, merchantSvc, auth.AuthMiddleware(authSvc))
@@ -200,9 +223,16 @@ func main() {
 	}
 
 	go func() {
-		log.Info().Str("addr", srv.Addr).Msg("server listening")
-		if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
-			log.Fatal().Err(err).Msg("server failed to start")
+		if cfg.TLSCert != "" && cfg.TLSKey != "" {
+			log.Info().Str("addr", srv.Addr).Msg("server listening with TLS")
+			if err := srv.ListenAndServeTLS(cfg.TLSCert, cfg.TLSKey); err != nil && err != http.ErrServerClosed {
+				log.Fatal().Err(err).Msg("server failed to start with TLS")
+			}
+		} else {
+			log.Info().Str("addr", srv.Addr).Msg("server listening (without TLS, expected behind TLS-terminating proxy)")
+			if err := srv.ListenAndServe(); err != nil && err != http.ErrServerClosed {
+				log.Fatal().Err(err).Msg("server failed to start")
+			}
 		}
 	}()
 

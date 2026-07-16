@@ -14,7 +14,18 @@ func NewService(repo *Repository) *Service {
 }
 
 func (s *Service) RecordPayment(ctx context.Context, merchantID, transactionID, currency string, amount, fee int64) error {
-	bal, err := s.repo.GetCurrentBalance(ctx, merchantID, currency)
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
+	bal, err := s.repo.GetCurrentBalanceTx(ctx, tx, merchantID, currency)
 	if err != nil {
 		return fmt.Errorf("get current balance: %w", err)
 	}
@@ -29,7 +40,7 @@ func (s *Service) RecordPayment(ctx context.Context, merchantID, transactionID, 
 		BalanceAfter:  bal + amount,
 		Description:   "payment received",
 	}
-	if err := s.repo.CreateEntry(ctx, paymentIn); err != nil {
+	if err := s.repo.CreateEntryTx(ctx, tx, paymentIn); err != nil {
 		return fmt.Errorf("create payment entry: %w", err)
 	}
 
@@ -44,16 +55,32 @@ func (s *Service) RecordPayment(ctx context.Context, merchantID, transactionID, 
 			BalanceAfter:  paymentIn.BalanceAfter - fee,
 			Description:   "processing fee",
 		}
-		if err := s.repo.CreateEntry(ctx, feeEntry); err != nil {
+		if err := s.repo.CreateEntryTx(ctx, tx, feeEntry); err != nil {
 			return fmt.Errorf("create fee entry: %w", err)
 		}
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
 
 	return nil
 }
 
 func (s *Service) RecordRefund(ctx context.Context, merchantID, transactionID, currency string, amount int64) error {
-	bal, err := s.repo.GetCurrentBalance(ctx, merchantID, currency)
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
+	bal, err := s.repo.GetCurrentBalanceTx(ctx, tx, merchantID, currency)
 	if err != nil {
 		return fmt.Errorf("get current balance: %w", err)
 	}
@@ -68,15 +95,31 @@ func (s *Service) RecordRefund(ctx context.Context, merchantID, transactionID, c
 		BalanceAfter:  bal - amount,
 		Description:   "refund issued",
 	}
-	if err := s.repo.CreateEntry(ctx, refund); err != nil {
+	if err := s.repo.CreateEntryTx(ctx, tx, refund); err != nil {
 		return fmt.Errorf("create refund entry: %w", err)
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
 
 	return nil
 }
 
 func (s *Service) RecordChargeback(ctx context.Context, merchantID, transactionID, currency string, amount int64) error {
-	bal, err := s.repo.GetCurrentBalance(ctx, merchantID, currency)
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
+	bal, err := s.repo.GetCurrentBalanceTx(ctx, tx, merchantID, currency)
 	if err != nil {
 		return fmt.Errorf("get current balance: %w", err)
 	}
@@ -91,15 +134,31 @@ func (s *Service) RecordChargeback(ctx context.Context, merchantID, transactionI
 		BalanceAfter:  bal - amount,
 		Description:   "chargeback",
 	}
-	if err := s.repo.CreateEntry(ctx, chargeback); err != nil {
+	if err := s.repo.CreateEntryTx(ctx, tx, chargeback); err != nil {
 		return fmt.Errorf("create chargeback entry: %w", err)
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
 
 	return nil
 }
 
 func (s *Service) RecordSettlement(ctx context.Context, merchantID, currency string, amount int64) error {
-	bal, err := s.repo.GetCurrentBalance(ctx, merchantID, currency)
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
+	bal, err := s.repo.GetCurrentBalanceTx(ctx, tx, merchantID, currency)
 	if err != nil {
 		return fmt.Errorf("get current balance: %w", err)
 	}
@@ -113,9 +172,14 @@ func (s *Service) RecordSettlement(ctx context.Context, merchantID, currency str
 		BalanceAfter:  bal - amount,
 		Description:   "settlement payout",
 	}
-	if err := s.repo.CreateEntry(ctx, settlement); err != nil {
+	if err := s.repo.CreateEntryTx(ctx, tx, settlement); err != nil {
 		return fmt.Errorf("create settlement entry: %w", err)
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
 
 	return nil
 }

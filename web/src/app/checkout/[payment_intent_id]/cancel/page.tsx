@@ -2,8 +2,17 @@
 
 import { useParams, useRouter } from 'next/navigation'
 import { XCircle } from 'lucide-react'
+import CheckoutErrorBoundary from '@/components/checkout/CheckoutErrorBoundary'
 
 export default function CheckoutCancelPage() {
+  return (
+    <CheckoutErrorBoundary>
+      <CheckoutCancelContent />
+    </CheckoutErrorBoundary>
+  )
+}
+
+function CheckoutCancelContent() {
   const params = useParams()
   const router = useRouter()
   const paymentIntentId = params.payment_intent_id as string

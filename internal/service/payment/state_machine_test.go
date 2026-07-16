@@ -33,6 +33,11 @@ func TestIsValidTransition_Valid(t *testing.T) {
 		{StatusWalletInitiated, StatusProcessing},
 		{StatusWalletInitiated, StatusFailed},
 		{StatusWalletInitiated, StatusCanceled},
+		{StatusCreated, StatusBankPending},
+		{StatusPending, StatusBankPending},
+		{StatusBankPending, StatusProcessing},
+		{StatusBankPending, StatusFailed},
+		{StatusBankPending, StatusExpired},
 	}
 
 	for _, tt := range validTransitions {
@@ -88,6 +93,7 @@ func TestIsValidTransition_Terminal(t *testing.T) {
 		StatusCreated, StatusPending, StatusProcessing,
 		StatusAuthorized, StatusCaptured, StatusSucceeded,
 		StatusFailed, StatusCanceled, StatusRefunded, StatusExpired,
+		StatusWalletInitiated, StatusBankPending,
 	}
 
 	for _, terminal := range terminalStates {

@@ -95,8 +95,10 @@ func Decrypt(encoded string) ([]byte, error) {
 	return plaintext, nil
 }
 
+const BcryptCost = 12
+
 func HashPassword(password string) (string, error) {
-	bytes, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	bytes, err := bcrypt.GenerateFromPassword([]byte(password), BcryptCost)
 	return string(bytes), err
 }
 

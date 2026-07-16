@@ -7,8 +7,12 @@ import (
 	"fmt"
 	"math"
 
+	"github.com/jackc/pgx/v5"
+
 	pkgErr "github.com/openpayment/gateway/internal/pkg/errors"
 )
+
+const maxPaymentAmount int64 = 100000000000
 
 var supportedCurrencies = map[string]bool{
 	"BDT": true,
@@ -22,6 +26,7 @@ type Service struct {
 	bankProvider    BankProvider
 	webhookSvc      WebhookService
 	ledgerSvc       LedgerService
+	auditor         Auditor
 }
 
 func NewService(repo PaymentRepository, processor Processor) *Service {
@@ -56,9 +61,17 @@ func (s *Service) WithLedger(svc LedgerService) *Service {
 	return s
 }
 
+func (s *Service) WithAuditor(auditor Auditor) *Service {
+	s.auditor = auditor
+	return s
+}
+
 func (s *Service) CreatePayment(ctx context.Context, merchantID string, req CreatePaymentRequest) (*PaymentIntent, error) {
 	if req.Amount <= 0 {
 		return nil, fmt.Errorf("amount must be greater than 0")
+	}
+	if req.Amount > maxPaymentAmount {
+		return nil, fmt.Errorf("amount exceeds maximum allowed")
 	}
 	if !supportedCurrencies[req.Currency] {
 		return nil, fmt.Errorf("unsupported currency: %s", req.Currency)
@@ -100,6 +113,10 @@ func (s *Service) CreatePayment(ctx context.Context, merchantID string, req Crea
 
 	if err := s.repo.CreatePaymentIntent(ctx, pi); err != nil {
 		return nil, fmt.Errorf("create payment intent: %w", err)
+	}
+
+	if s.auditor != nil {
+		s.auditor.Log(ctx, merchantID, "payment.created", "payment_intent", pi.ID, fmt.Sprintf("created payment for %d %s", req.Amount, req.Currency))
 	}
 
 	if req.Confirm && req.PaymentMethod == "card" {
@@ -152,6 +169,17 @@ func (s *Service) ProcessPayment(ctx context.Context, pi *PaymentIntent) error {
 }
 
 func (s *Service) processCardPayment(ctx context.Context, pi *PaymentIntent) error {
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
 	cardReq := CardRequest{
 		Amount:         pi.Amount,
 		Currency:       pi.Currency,
@@ -164,21 +192,41 @@ func (s *Service) processCardPayment(ctx context.Context, pi *PaymentIntent) err
 		pi.Status = StatusFailed
 		errMsg := err.Error()
 		pi.ErrorMessage = &errMsg
-		if updateErr := s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed); updateErr != nil {
+		if updateErr := s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed); updateErr != nil {
 			return fmt.Errorf("update to failed: %w", updateErr)
 		}
 		return fmt.Errorf("processor error: %w", err)
 	}
 
-	return s.finalizePayment(ctx, pi, procResp)
+	if err := s.finalizePaymentTx(ctx, tx, pi, procResp); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
+
+	return nil
 }
 
 func (s *Service) processWalletPayment(ctx context.Context, pi *PaymentIntent) error {
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
 	if len(s.walletProviders) == 0 {
 		pi.Status = StatusFailed
 		errMsg := "no wallet providers configured"
 		pi.ErrorMessage = &errMsg
-		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed)
 		return fmt.Errorf("no wallet providers configured")
 	}
 
@@ -192,7 +240,7 @@ func (s *Service) processWalletPayment(ctx context.Context, pi *PaymentIntent) e
 		pi.Status = StatusFailed
 		errMsg := fmt.Sprintf("wallet provider %q not found", providerName)
 		pi.ErrorMessage = &errMsg
-		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed)
 		return fmt.Errorf("wallet provider %q not found", providerName)
 	}
 
@@ -221,36 +269,52 @@ func (s *Service) processWalletPayment(ctx context.Context, pi *PaymentIntent) e
 		pi.Status = StatusFailed
 		errMsg := err.Error()
 		pi.ErrorMessage = &errMsg
-		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed)
 		return fmt.Errorf("%s init failed: %w", providerName, err)
 	}
 
 	if !initResp.Success {
 		pi.Status = StatusFailed
 		pi.ErrorMessage = &initResp.Message
-		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed)
 		return fmt.Errorf("%s init declined: %s", providerName, initResp.Message)
 	}
 
 	pi.ProviderRef = &initResp.ProviderRef
 	pi.RedirectURL = &initResp.RedirectURL
-	s.repo.UpdatePaymentIntentProvider(ctx, pi.ID, initResp.ProviderRef, initResp.RedirectURL)
+	s.repo.UpdatePaymentIntentProviderTx(ctx, tx, pi.ID, initResp.ProviderRef, initResp.RedirectURL)
 
-	if err := s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusWalletInitiated); err != nil {
+	if err := s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusWalletInitiated); err != nil {
 		return fmt.Errorf("update to wallet_initiated: %w", err)
 	}
 
 	pi.Status = StatusWalletInitiated
 
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
+
 	return nil
 }
 
 func (s *Service) processBankTransfer(ctx context.Context, pi *PaymentIntent) error {
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
 	if s.bankProvider == nil {
 		pi.Status = StatusFailed
 		errMsg := "bank transfer provider not configured"
 		pi.ErrorMessage = &errMsg
-		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed)
 		return fmt.Errorf("bank transfer provider not configured")
 	}
 
@@ -265,20 +329,82 @@ func (s *Service) processBankTransfer(ctx context.Context, pi *PaymentIntent) er
 		pi.Status = StatusFailed
 		errMsg := err.Error()
 		pi.ErrorMessage = &errMsg
-		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed)
 		return fmt.Errorf("bank init failed: %w", err)
 	}
 
 	if !initResp.Success {
 		pi.Status = StatusFailed
 		pi.ErrorMessage = &initResp.Message
-		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed)
 		return fmt.Errorf("bank init declined: %s", initResp.Message)
 	}
 
 	pi.RedirectURL = &initResp.RedirectURL
-	s.repo.UpdatePaymentIntentRedirect(ctx, pi.ID, initResp.RedirectURL)
-	pi.Status = StatusWalletInitiated
+	s.repo.UpdatePaymentIntentRedirectTx(ctx, tx, pi.ID, initResp.RedirectURL)
+	pi.Status = StatusBankPending
+
+	if err := s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusBankPending); err != nil {
+		return fmt.Errorf("update to bank_pending: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
+
+	return nil
+}
+
+func (s *Service) finalizePaymentTx(ctx context.Context, tx pgx.Tx, pi *PaymentIntent, procResp *ProcessorResponse) error {
+	respBytes, _ := json.Marshal(procResp)
+
+	if !procResp.Success {
+		pi.Status = StatusFailed
+		pi.ErrorMessage = &procResp.Message
+		if updateErr := s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed); updateErr != nil {
+			return fmt.Errorf("update to failed: %w", updateErr)
+		}
+		return fmt.Errorf("processor declined: %s", procResp.Message)
+	}
+
+	nextStatus := StatusAuthorized
+	amountCapturable := pi.Amount
+	amountReceived := int64(0)
+	if pi.CaptureMethod == "automatic" {
+		nextStatus = StatusCaptured
+		amountCapturable = 0
+		amountReceived = pi.Amount
+	}
+
+	pi.Status = nextStatus
+	pi.AmountCapturable = amountCapturable
+	pi.AmountReceived = amountReceived
+
+	if err := s.repo.UpdatePaymentIntentCaptureTx(ctx, tx, pi.ID, amountCapturable, amountReceived, nextStatus); err != nil {
+		return fmt.Errorf("update after process: %w", err)
+	}
+
+	txModel := &Transaction{
+		PaymentIntentID:   pi.ID,
+		MerchantID:        pi.MerchantID,
+		Type:              "capture",
+		Status:            "succeeded",
+		Amount:            pi.Amount,
+		Currency:          pi.Currency,
+		ProcessorRef:      &procResp.ProcessorRef,
+		ProcessorResponse: respBytes,
+		Fee:               procResp.Fee,
+		NetAmount:         pi.Amount - procResp.Fee,
+	}
+
+	if err := s.repo.CreateTransactionTx(ctx, tx, txModel); err != nil {
+		return fmt.Errorf("create transaction: %w", err)
+	}
+
+	s.dispatchWebhook(ctx, pi.MerchantID, "payment.success", pi)
+	s.recordLedgerPayment(ctx, pi.MerchantID, txModel.ID, pi.Currency, pi.Amount, procResp.Fee)
+
 	return nil
 }
 
@@ -335,7 +461,18 @@ func (s *Service) finalizePayment(ctx context.Context, pi *PaymentIntent, procRe
 }
 
 func (s *Service) HandleWalletCallback(ctx context.Context, paymentID string, status string, providerRef string) error {
-	pi, err := s.repo.GetPaymentIntent(ctx, paymentID, "")
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
+	pi, err := s.repo.GetPaymentIntentForUpdateTx(ctx, tx, paymentID, "")
 	if err != nil {
 		return fmt.Errorf("get payment intent: %w", err)
 	}
@@ -346,13 +483,17 @@ func (s *Service) HandleWalletCallback(ctx context.Context, paymentID string, st
 
 	if status == "cancel" {
 		pi.Status = StatusCanceled
-		if err := s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusCanceled); err != nil {
+		if err := s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusCanceled); err != nil {
 			return fmt.Errorf("update to canceled: %w", err)
 		}
+		if err := tx.Commit(ctx); err != nil {
+			return fmt.Errorf("commit tx: %w", err)
+		}
+		committed = true
 		return nil
 	}
 
-	if err := s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusProcessing); err != nil {
+	if err := s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusProcessing); err != nil {
 		return fmt.Errorf("update to processing: %w", err)
 	}
 	pi.Status = StatusProcessing
@@ -372,11 +513,20 @@ func (s *Service) HandleWalletCallback(ctx context.Context, paymentID string, st
 		pi.Status = StatusFailed
 		errMsg := err.Error()
 		pi.ErrorMessage = &errMsg
-		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		s.repo.UpdatePaymentIntentStatusTx(ctx, tx, pi.ID, StatusFailed)
 		return fmt.Errorf("execute payment: %w", err)
 	}
 
-	return s.finalizePayment(ctx, pi, procResp)
+	if err := s.finalizePaymentTx(ctx, tx, pi, procResp); err != nil {
+		return err
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
+
+	return nil
 }
 
 func (s *Service) dispatchWebhook(ctx context.Context, merchantID, eventType string, data interface{}) {
@@ -416,6 +566,17 @@ func (s *Service) CapturePayment(ctx context.Context, id, merchantID string, amo
 		}
 	}
 
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
 	pi, err := s.repo.GetPaymentIntent(ctx, id, merchantID)
 	if err != nil {
 		return nil, err
@@ -440,11 +601,11 @@ func (s *Service) CapturePayment(ctx context.Context, id, merchantID string, amo
 		newStatus = StatusSucceeded
 	}
 
-	if err := s.repo.UpdatePaymentIntentCapture(ctx, id, newCapturable, newReceived, newStatus); err != nil {
+	if err := s.repo.UpdatePaymentIntentCaptureTx(ctx, tx, id, newCapturable, newReceived, newStatus); err != nil {
 		return nil, fmt.Errorf("update capture: %w", err)
 	}
 
-	tx := &Transaction{
+	txModel := &Transaction{
 		PaymentIntentID: id,
 		MerchantID:      merchantID,
 		Type:            "capture",
@@ -456,16 +617,25 @@ func (s *Service) CapturePayment(ctx context.Context, id, merchantID string, amo
 		IdempotencyKey:  idempotencyKey,
 	}
 
-	if err := s.repo.CreateTransaction(ctx, tx); err != nil {
+	if err := s.repo.CreateTransactionTx(ctx, tx, txModel); err != nil {
 		return nil, fmt.Errorf("create capture transaction: %w", err)
 	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
 
 	pi.Status = newStatus
 	pi.AmountCapturable = newCapturable
 	pi.AmountReceived = newReceived
 
+	if s.auditor != nil {
+		s.auditor.Log(ctx, merchantID, "payment.captured", "payment_intent", id, fmt.Sprintf("captured %d %s", captureAmount, pi.Currency))
+	}
+
 	s.dispatchWebhook(ctx, pi.MerchantID, "payment.success", pi)
-	s.recordLedgerPayment(ctx, pi.MerchantID, tx.ID, pi.Currency, captureAmount, 0)
+	s.recordLedgerPayment(ctx, pi.MerchantID, txModel.ID, pi.Currency, captureAmount, 0)
 
 	return pi, nil
 }
@@ -495,6 +665,17 @@ func (s *Service) RefundPayment(ctx context.Context, id, merchantID string, amou
 		}
 	}
 
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
 	pi, err := s.repo.GetPaymentIntent(ctx, id, merchantID)
 	if err != nil {
 		return nil, err
@@ -518,7 +699,7 @@ func (s *Service) RefundPayment(ctx context.Context, id, merchantID string, amou
 		newStatus = StatusRefunded
 	}
 
-	tx := &Transaction{
+	txModel := &Transaction{
 		PaymentIntentID: id,
 		MerchantID:      merchantID,
 		Type:            "refund",
@@ -529,23 +710,32 @@ func (s *Service) RefundPayment(ctx context.Context, id, merchantID string, amou
 		IdempotencyKey:  idempotencyKey,
 	}
 
-	if err := s.repo.CreateTransaction(ctx, tx); err != nil {
+	if err := s.repo.CreateTransactionTx(ctx, tx, txModel); err != nil {
 		return nil, fmt.Errorf("create refund transaction: %w", err)
 	}
 
 	if newStatus == StatusRefunded {
-		if err := s.repo.UpdatePaymentIntentStatus(ctx, id, StatusRefunded); err != nil {
+		if err := s.repo.UpdatePaymentIntentStatusTx(ctx, tx, id, StatusRefunded); err != nil {
 			return nil, fmt.Errorf("update to refunded: %w", err)
 		}
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
+
 	pi.AmountReceived = newReceived
 	pi.AmountCapturable = int64(math.Max(0, float64(pi.AmountCapturable-refundAmount)))
 
-	s.dispatchWebhook(ctx, pi.MerchantID, "refund.completed", tx)
-	s.recordLedgerRefund(ctx, pi.MerchantID, tx.ID, pi.Currency, refundAmount)
+	if s.auditor != nil {
+		s.auditor.Log(ctx, merchantID, "payment.refunded", "payment_intent", id, fmt.Sprintf("refunded %d %s", refundAmount, pi.Currency))
+	}
 
-	return tx, nil
+	s.dispatchWebhook(ctx, pi.MerchantID, "refund.completed", txModel)
+	s.recordLedgerRefund(ctx, pi.MerchantID, txModel.ID, pi.Currency, refundAmount)
+
+	return txModel, nil
 }
 
 func (s *Service) VoidPayment(ctx context.Context, id, merchantID string, idempotencyKey *string) (*PaymentIntent, error) {
@@ -563,6 +753,17 @@ func (s *Service) VoidPayment(ctx context.Context, id, merchantID string, idempo
 		}
 	}
 
+	tx, err := s.repo.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
 	pi, err := s.repo.GetPaymentIntent(ctx, id, merchantID)
 	if err != nil {
 		return nil, err
@@ -572,11 +773,11 @@ func (s *Service) VoidPayment(ctx context.Context, id, merchantID string, idempo
 		return nil, ErrPaymentNotVoidable
 	}
 
-	if err := s.repo.UpdatePaymentIntentStatus(ctx, id, StatusCanceled); err != nil {
+	if err := s.repo.UpdatePaymentIntentStatusTx(ctx, tx, id, StatusCanceled); err != nil {
 		return nil, fmt.Errorf("void payment: %w", err)
 	}
 
-	tx := &Transaction{
+	txModel := &Transaction{
 		PaymentIntentID: id,
 		MerchantID:      merchantID,
 		Type:            "void",
@@ -586,21 +787,50 @@ func (s *Service) VoidPayment(ctx context.Context, id, merchantID string, idempo
 		IdempotencyKey:  idempotencyKey,
 	}
 
-	if err := s.repo.CreateTransaction(ctx, tx); err != nil {
+	if err := s.repo.CreateTransactionTx(ctx, tx, txModel); err != nil {
 		return nil, fmt.Errorf("create void transaction: %w", err)
 	}
 
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
+
 	pi.Status = StatusCanceled
+
+	if s.auditor != nil {
+		s.auditor.Log(ctx, merchantID, "payment.voided", "payment_intent", id, "payment voided")
+	}
 
 	return pi, nil
 }
 
-func (s *Service) ListPayments(ctx context.Context, merchantID string, limit, offset int) ([]PaymentIntent, error) {
+type ListPaymentsResult struct {
+	Intents []PaymentIntent `json:"data"`
+	Total   int             `json:"total"`
+	Limit   int             `json:"limit"`
+	Offset  int             `json:"offset"`
+}
+
+func (s *Service) ListPayments(ctx context.Context, merchantID string, limit, offset int) (*ListPaymentsResult, error) {
 	if limit <= 0 {
 		limit = 10
 	}
 	if offset < 0 {
 		offset = 0
 	}
-	return s.repo.ListPaymentIntents(ctx, merchantID, limit, offset)
+	intents, err := s.repo.ListPaymentIntents(ctx, merchantID, limit, offset)
+	if err != nil {
+		return nil, err
+	}
+	total, err := s.repo.CountPaymentIntents(ctx, merchantID)
+	if err != nil {
+		return nil, err
+	}
+	return &ListPaymentsResult{
+		Intents: intents,
+		Total:   total,
+		Limit:   limit,
+		Offset:  offset,
+	}, nil
 }

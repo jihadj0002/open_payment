@@ -7,6 +7,8 @@ import (
 	"github.com/rs/zerolog/log"
 )
 
+const workerTimeout = 30 * time.Second
+
 type RetryWorker struct {
 	svc      *Service
 	interval time.Duration
@@ -32,7 +34,9 @@ func (w *RetryWorker) Start(ctx context.Context) {
 		select {
 		case <-ticker.C:
 			log.Debug().Msg("webhook retry worker: checking pending deliveries")
-			w.svc.RetryPendingDeliveries(ctx)
+			timedCtx, cancel := context.WithTimeout(ctx, workerTimeout)
+			w.svc.RetryPendingDeliveries(timedCtx)
+			cancel()
 		case <-ctx.Done():
 			log.Info().Msg("webhook retry worker stopped")
 			return

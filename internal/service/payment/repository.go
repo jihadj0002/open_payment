@@ -9,10 +9,17 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/openpayment/gateway/internal/database"
 	pkgErr "github.com/openpayment/gateway/internal/pkg/errors"
 )
+
+type execQuerier interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 type Repository struct {
 	*database.BaseRepository
@@ -120,8 +127,16 @@ func (r *Repository) GetPaymentIntent(ctx context.Context, id, merchantID string
 }
 
 func (r *Repository) UpdatePaymentIntentProvider(ctx context.Context, id, providerRef, redirectURL string) error {
+	return r.execUpdatePaymentIntentProvider(ctx, r.Pool, id, providerRef, redirectURL)
+}
+
+func (r *Repository) UpdatePaymentIntentProviderTx(ctx context.Context, tx pgx.Tx, id, providerRef, redirectURL string) error {
+	return r.execUpdatePaymentIntentProvider(ctx, tx, id, providerRef, redirectURL)
+}
+
+func (r *Repository) execUpdatePaymentIntentProvider(ctx context.Context, q execQuerier, id, providerRef, redirectURL string) error {
 	query := `UPDATE payment_intents SET provider_ref = $1, redirect_url = $2, updated_at = NOW() WHERE id = $3`
-	_, err := r.Pool.Exec(ctx, query, providerRef, redirectURL, id)
+	_, err := q.Exec(ctx, query, providerRef, redirectURL, id)
 	if err != nil {
 		return fmt.Errorf("update payment intent provider: %w", err)
 	}
@@ -129,8 +144,16 @@ func (r *Repository) UpdatePaymentIntentProvider(ctx context.Context, id, provid
 }
 
 func (r *Repository) UpdatePaymentIntentRedirect(ctx context.Context, id, redirectURL string) error {
+	return r.execUpdatePaymentIntentRedirect(ctx, r.Pool, id, redirectURL)
+}
+
+func (r *Repository) UpdatePaymentIntentRedirectTx(ctx context.Context, tx pgx.Tx, id, redirectURL string) error {
+	return r.execUpdatePaymentIntentRedirect(ctx, tx, id, redirectURL)
+}
+
+func (r *Repository) execUpdatePaymentIntentRedirect(ctx context.Context, q execQuerier, id, redirectURL string) error {
 	query := `UPDATE payment_intents SET redirect_url = $1, updated_at = NOW() WHERE id = $2`
-	_, err := r.Pool.Exec(ctx, query, redirectURL, id)
+	_, err := q.Exec(ctx, query, redirectURL, id)
 	if err != nil {
 		return fmt.Errorf("update payment intent redirect: %w", err)
 	}
@@ -138,17 +161,21 @@ func (r *Repository) UpdatePaymentIntentRedirect(ctx context.Context, id, redire
 }
 
 func (r *Repository) UpdatePaymentIntentStatus(ctx context.Context, id, status string) error {
-	return r.updatePaymentIntentStatusWithReason(ctx, id, status, "system", nil)
+	return r.updatePaymentIntentStatusWithReason(ctx, r.Pool, id, status, "system", nil)
 }
 
-func (r *Repository) updatePaymentIntentStatusWithReason(ctx context.Context, id, status, changedBy string, reason *string) error {
-	oldStatus, err := r.getPaymentIntentStatus(ctx, id)
+func (r *Repository) UpdatePaymentIntentStatusTx(ctx context.Context, tx pgx.Tx, id, status string) error {
+	return r.updatePaymentIntentStatusWithReason(ctx, tx, id, status, "system", nil)
+}
+
+func (r *Repository) updatePaymentIntentStatusWithReason(ctx context.Context, q execQuerier, id, status, changedBy string, reason *string) error {
+	oldStatus, err := r.getPaymentIntentStatusTx(ctx, q, id)
 	if err != nil {
 		return err
 	}
 
 	query := `UPDATE payment_intents SET status = $1, updated_at = NOW() WHERE id = $2`
-	result, err := r.Pool.Exec(ctx, query, status, id)
+	result, err := q.Exec(ctx, query, status, id)
 	if err != nil {
 		return fmt.Errorf("update payment intent status: %w", err)
 	}
@@ -156,16 +183,16 @@ func (r *Repository) updatePaymentIntentStatusWithReason(ctx context.Context, id
 		return pkgErr.ErrNotFound
 	}
 
-	if err := r.recordStatusChange(ctx, id, oldStatus, status, changedBy, reason); err != nil {
+	if err := r.recordStatusChangeTx(ctx, q, id, oldStatus, status, changedBy, reason); err != nil {
 		return fmt.Errorf("record status change: %w", err)
 	}
 
 	return nil
 }
 
-func (r *Repository) getPaymentIntentStatus(ctx context.Context, id string) (string, error) {
+func (r *Repository) getPaymentIntentStatusTx(ctx context.Context, q execQuerier, id string) (string, error) {
 	var status string
-	err := r.Pool.QueryRow(ctx, `SELECT status FROM payment_intents WHERE id = $1`, id).Scan(&status)
+	err := q.QueryRow(ctx, `SELECT status FROM payment_intents WHERE id = $1`, id).Scan(&status)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return "", pkgErr.ErrNotFound
@@ -175,8 +202,8 @@ func (r *Repository) getPaymentIntentStatus(ctx context.Context, id string) (str
 	return status, nil
 }
 
-func (r *Repository) recordStatusChange(ctx context.Context, paymentIntentID, oldStatus, newStatus, changedBy string, reason *string) error {
-	_, err := r.Pool.Exec(ctx,
+func (r *Repository) recordStatusChangeTx(ctx context.Context, q execQuerier, paymentIntentID, oldStatus, newStatus, changedBy string, reason *string) error {
+	_, err := q.Exec(ctx,
 		`INSERT INTO status_history (payment_intent_id, old_status, new_status, changed_by, reason) VALUES ($1, $2, $3, $4, $5)`,
 		paymentIntentID, oldStatus, newStatus, changedBy, reason,
 	)
@@ -212,13 +239,21 @@ func (r *Repository) ListStatusHistory(ctx context.Context, paymentIntentID stri
 }
 
 func (r *Repository) UpdatePaymentIntentCapture(ctx context.Context, id string, amountCapturable, amountReceived int64, status string) error {
-	oldStatus, err := r.getPaymentIntentStatus(ctx, id)
+	return r.updatePaymentIntentCaptureTx(ctx, r.Pool, id, amountCapturable, amountReceived, status)
+}
+
+func (r *Repository) UpdatePaymentIntentCaptureTx(ctx context.Context, tx pgx.Tx, id string, amountCapturable, amountReceived int64, status string) error {
+	return r.updatePaymentIntentCaptureTx(ctx, tx, id, amountCapturable, amountReceived, status)
+}
+
+func (r *Repository) updatePaymentIntentCaptureTx(ctx context.Context, q execQuerier, id string, amountCapturable, amountReceived int64, status string) error {
+	oldStatus, err := r.getPaymentIntentStatusTx(ctx, q, id)
 	if err != nil {
 		return err
 	}
 
 	query := `UPDATE payment_intents SET amount_capturable = $1, amount_received = $2, status = $3, updated_at = NOW() WHERE id = $4`
-	result, err := r.Pool.Exec(ctx, query, amountCapturable, amountReceived, status, id)
+	result, err := q.Exec(ctx, query, amountCapturable, amountReceived, status, id)
 	if err != nil {
 		return fmt.Errorf("update payment intent capture: %w", err)
 	}
@@ -226,7 +261,7 @@ func (r *Repository) UpdatePaymentIntentCapture(ctx context.Context, id string, 
 		return pkgErr.ErrNotFound
 	}
 
-	if err := r.recordStatusChange(ctx, id, oldStatus, status, "system", nil); err != nil {
+	if err := r.recordStatusChangeTx(ctx, q, id, oldStatus, status, "system", nil); err != nil {
 		return fmt.Errorf("record status change: %w", err)
 	}
 
@@ -356,11 +391,19 @@ func (r *Repository) GetByIdempotencyKey(ctx context.Context, key, merchantID st
 	return &pi, nil
 }
 
-func (r *Repository) CreateTransaction(ctx context.Context, tx *Transaction) error {
-	tx.ID = uuid.New().String()
-	tx.CreatedAt = time.Now()
+func (r *Repository) CreateTransaction(ctx context.Context, txModel *Transaction) error {
+	return r.createTransactionTx(ctx, r.Pool, txModel)
+}
 
-	respBytes, err := json.Marshal(tx.ProcessorResponse)
+func (r *Repository) CreateTransactionTx(ctx context.Context, tx pgx.Tx, txModel *Transaction) error {
+	return r.createTransactionTx(ctx, tx, txModel)
+}
+
+func (r *Repository) createTransactionTx(ctx context.Context, q execQuerier, txModel *Transaction) error {
+	txModel.ID = uuid.New().String()
+	txModel.CreatedAt = time.Now()
+
+	respBytes, err := json.Marshal(txModel.ProcessorResponse)
 	if err != nil {
 		return fmt.Errorf("marshal processor response: %w", err)
 	}
@@ -368,9 +411,9 @@ func (r *Repository) CreateTransaction(ctx context.Context, tx *Transaction) err
 	query := `INSERT INTO transactions (id, payment_intent_id, merchant_id, type, amount, currency, status, processor_ref, processor_response, fee, net_amount, idempotency_key, created_at)
 		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13)`
 
-	_, err = r.Pool.Exec(ctx, query,
-		tx.ID, tx.PaymentIntentID, tx.MerchantID, tx.Type, tx.Amount, tx.Currency, tx.Status,
-		tx.ProcessorRef, respBytes, tx.Fee, tx.NetAmount, tx.IdempotencyKey, tx.CreatedAt,
+	_, err = q.Exec(ctx, query,
+		txModel.ID, txModel.PaymentIntentID, txModel.MerchantID, txModel.Type, txModel.Amount, txModel.Currency, txModel.Status,
+		txModel.ProcessorRef, respBytes, txModel.Fee, txModel.NetAmount, txModel.IdempotencyKey, txModel.CreatedAt,
 	)
 	if err != nil {
 		return fmt.Errorf("insert transaction: %w", err)
@@ -427,6 +470,99 @@ func (r *Repository) GetTransaction(ctx context.Context, id string) (*Transactio
 	}
 
 	return &t, nil
+}
+
+func (r *Repository) Begin(ctx context.Context) (pgx.Tx, error) {
+	return r.Pool.Begin(ctx)
+}
+
+func (r *Repository) CountPaymentIntents(ctx context.Context, merchantID string) (int, error) {
+	var count int
+	err := r.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM payment_intents WHERE merchant_id = $1`, merchantID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count payment intents: %w", err)
+	}
+	return count, nil
+}
+
+func (r *Repository) GetPaymentIntentForUpdate(ctx context.Context, id, merchantID string) (*PaymentIntent, error) {
+	pi, err := r.getPaymentIntentTx(ctx, r.Pool, id, merchantID, "FOR UPDATE")
+	if err != nil {
+		return nil, err
+	}
+	return pi, nil
+}
+
+func (r *Repository) GetPaymentIntentForUpdateTx(ctx context.Context, tx pgx.Tx, id, merchantID string) (*PaymentIntent, error) {
+	pi, err := r.getPaymentIntentTx(ctx, tx, id, merchantID, "FOR UPDATE")
+	if err != nil {
+		return nil, err
+	}
+	return pi, nil
+}
+
+func (r *Repository) getPaymentIntentTx(ctx context.Context, q execQuerier, id, merchantID, lockClause string) (*PaymentIntent, error) {
+	var whereClause string
+	var args []interface{}
+
+	if merchantID != "" {
+		whereClause = fmt.Sprintf("WHERE pi.id = $1 AND pi.merchant_id = $2 %s", lockClause)
+		args = []interface{}{id, merchantID}
+	} else {
+		whereClause = fmt.Sprintf("WHERE pi.id = $1 %s", lockClause)
+		args = []interface{}{id}
+	}
+
+	query := `SELECT pi.id, pi.merchant_id, pi.customer_id, pi.amount, pi.amount_capturable, pi.amount_received,
+		pi.capture_method, pi.currency, pi.status, 
+		pi.idempotency_key, pi.description, pi.metadata, pi.failure_reason, pi.processor,
+		COALESCE(pi.wallet_provider, ''), pi.return_url, pi.cancel_url, pi.client_secret,
+		COALESCE(pi.redirect_url, ''), COALESCE(pi.provider_ref, ''),
+		pi.created_at, pi.updated_at
+		FROM payment_intents pi ` + whereClause
+
+	var pi PaymentIntent
+	var metaBytes []byte
+	var failureReason *string
+	var redirectURL string
+	var providerRef string
+	var walletProvider string
+
+	err := q.QueryRow(ctx, query, args...).Scan(
+		&pi.ID, &pi.MerchantID, &pi.CustomerID, &pi.Amount, &pi.AmountCapturable, &pi.AmountReceived,
+		&pi.CaptureMethod, &pi.Currency, &pi.Status,
+		&pi.IdempotencyKey, &pi.Description, &metaBytes, &failureReason,
+		&pi.PaymentMethod, &walletProvider,
+		&pi.ReturnURL, &pi.CancelURL, &pi.ClientSecret,
+		&redirectURL, &providerRef,
+		&pi.CreatedAt, &pi.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pkgErr.ErrNotFound
+		}
+		return nil, fmt.Errorf("get payment intent: %w", err)
+	}
+
+	if metaBytes != nil {
+		if err := json.Unmarshal(metaBytes, &pi.Metadata); err != nil {
+			return nil, fmt.Errorf("unmarshal metadata: %w", err)
+		}
+	}
+
+	if failureReason != nil {
+		pi.ErrorMessage = failureReason
+	}
+
+	if redirectURL != "" {
+		pi.RedirectURL = &redirectURL
+	}
+	if providerRef != "" {
+		pi.ProviderRef = &providerRef
+	}
+	pi.WalletProvider = walletProvider
+
+	return &pi, nil
 }
 
 func (r *Repository) GetPaymentIntentByProviderRef(ctx context.Context, providerRef string) (*PaymentIntent, error) {

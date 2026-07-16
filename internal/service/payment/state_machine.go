@@ -22,6 +22,7 @@ const (
 	StatusRefunded        = "refunded"
 	StatusExpired         = "expired"
 	StatusWalletInitiated = "wallet_initiated"
+	StatusBankPending     = "bank_pending"
 )
 
 var transitions = map[string]map[string]bool{
@@ -30,12 +31,14 @@ var transitions = map[string]map[string]bool{
 		StatusFailed:          true,
 		StatusCanceled:        true,
 		StatusWalletInitiated: true,
+		StatusBankPending:     true,
 	},
 	StatusPending: {
 		StatusProcessing:      true,
 		StatusFailed:          true,
 		StatusCanceled:        true,
 		StatusWalletInitiated: true,
+		StatusBankPending:     true,
 	},
 	StatusProcessing: {
 		StatusAuthorized: true,
@@ -56,6 +59,11 @@ var transitions = map[string]map[string]bool{
 		StatusProcessing: true,
 		StatusFailed:     true,
 		StatusCanceled:   true,
+	},
+	StatusBankPending: {
+		StatusProcessing: true,
+		StatusFailed:     true,
+		StatusExpired:    true,
 	},
 	StatusSucceeded: {},
 	StatusFailed:    {},

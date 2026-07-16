@@ -31,6 +31,10 @@ var (
 	ErrResetTokenUsed         = errors.New("reset token has already been used")
 )
 
+type Auditor interface {
+	Log(ctx context.Context, actorID, action, resourceType, resourceID, details string) error
+}
+
 const (
 	AccessTokenExpiry  = 15 * time.Minute
 	RefreshTokenExpiry = 30 * 24 * time.Hour
@@ -45,12 +49,18 @@ type jwtCustomClaims struct {
 }
 
 type AuthService struct {
-	cfg *config.Config
-	db  *pgxpool.Pool
+	cfg     *config.Config
+	db      *pgxpool.Pool
+	auditor Auditor
 }
 
 func NewAuthService(cfg *config.Config, db *pgxpool.Pool) *AuthService {
 	return &AuthService{cfg: cfg, db: db}
+}
+
+func (s *AuthService) WithAuditor(auditor Auditor) *AuthService {
+	s.auditor = auditor
+	return s
 }
 
 func HashAPIKey(key string) string {
@@ -106,6 +116,15 @@ func (s *AuthService) GenerateTokenPair(claims Claims) (*TokenPair, error) {
 		return nil, fmt.Errorf("generating refresh token: %w", err)
 	}
 	refreshToken := hex.EncodeToString(refreshBytes)
+	refreshHash := HashAPIKey(refreshToken)
+
+	if claims.MerchantID != "" && s.db != nil {
+		_, _ = s.db.Exec(
+			context.Background(),
+			`INSERT INTO refresh_tokens (merchant_id, token_hash, expires_at) VALUES ($1, $2, NOW() + $3::INTERVAL)`,
+			claims.MerchantID, refreshHash, "30 days",
+		)
+	}
 
 	return &TokenPair{
 		AccessToken:  accessTokenString,
@@ -113,6 +132,108 @@ func (s *AuthService) GenerateTokenPair(claims Claims) (*TokenPair, error) {
 		TokenType:    "Bearer",
 		ExpiresIn:    int(AccessTokenExpiry.Seconds()),
 	}, nil
+}
+
+func (s *AuthService) RefreshAccessToken(ctx context.Context, refreshToken string) (*TokenPair, error) {
+	refreshHash := HashAPIKey(refreshToken)
+
+	var merchantID string
+	var revokedAt *time.Time
+	var expiresAt time.Time
+	err := s.db.QueryRow(
+		ctx,
+		`SELECT merchant_id, revoked_at, expires_at FROM refresh_tokens WHERE token_hash = $1`,
+		refreshHash,
+	).Scan(&merchantID, &revokedAt, &expiresAt)
+	if err != nil {
+		if err == pgx.ErrNoRows {
+			return nil, ErrInvalidToken
+		}
+		return nil, fmt.Errorf("querying refresh token: %w", err)
+	}
+
+	if revokedAt != nil {
+		return nil, ErrInvalidToken
+	}
+
+	if time.Now().After(expiresAt) {
+		return nil, ErrInvalidToken
+	}
+
+	tx, err := s.db.Begin(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("begin tx: %w", err)
+	}
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
+
+	_, err = tx.Exec(ctx, `UPDATE refresh_tokens SET revoked_at = NOW() WHERE token_hash = $1`, refreshHash)
+	if err != nil {
+		return nil, fmt.Errorf("revoking old token: %w", err)
+	}
+
+	refreshBytes := make([]byte, 32)
+	if _, err := rand.Read(refreshBytes); err != nil {
+		return nil, fmt.Errorf("generating new refresh token: %w", err)
+	}
+	newRefreshToken := hex.EncodeToString(refreshBytes)
+	newRefreshHash := HashAPIKey(newRefreshToken)
+
+	_, err = tx.Exec(
+		ctx,
+		`INSERT INTO refresh_tokens (merchant_id, token_hash, expires_at) VALUES ($1, $2, NOW() + $3::INTERVAL)`,
+		merchantID, newRefreshHash, "30 days",
+	)
+	if err != nil {
+		return nil, fmt.Errorf("storing new refresh token: %w", err)
+	}
+
+	jwtClaims := jwtCustomClaims{
+		MerchantID: merchantID,
+		Role:       "merchant",
+		RegisteredClaims: jwt.RegisteredClaims{
+			IssuedAt:  jwt.NewNumericDate(time.Now()),
+			ExpiresAt: jwt.NewNumericDate(time.Now().Add(AccessTokenExpiry)),
+			Issuer:    "open-payment-gateway",
+		},
+	}
+
+	accessToken := jwt.NewWithClaims(jwt.SigningMethodHS256, jwtClaims)
+	accessTokenString, err := accessToken.SignedString([]byte(s.cfg.JWTSecret))
+	if err != nil {
+		return nil, fmt.Errorf("signing access token: %w", err)
+	}
+
+	if err := tx.Commit(ctx); err != nil {
+		return nil, fmt.Errorf("commit tx: %w", err)
+	}
+	committed = true
+
+	return &TokenPair{
+		AccessToken:  accessTokenString,
+		RefreshToken: newRefreshToken,
+		TokenType:    "Bearer",
+		ExpiresIn:    int(AccessTokenExpiry.Seconds()),
+	}, nil
+}
+
+func (s *AuthService) RevokeRefreshTokens(ctx context.Context, merchantID string) error {
+	_, err := s.db.Exec(
+		ctx,
+		`UPDATE refresh_tokens SET revoked_at = NOW() WHERE merchant_id = $1 AND revoked_at IS NULL`,
+		merchantID,
+	)
+	if err != nil {
+		return fmt.Errorf("revoking refresh tokens: %w", err)
+	}
+	if s.auditor != nil {
+		s.auditor.Log(ctx, merchantID, "refresh_tokens.revoked", "merchant", merchantID, "all refresh tokens revoked")
+	}
+	return nil
 }
 
 func (s *AuthService) ValidateToken(tokenString string) (*Claims, error) {
@@ -206,10 +327,9 @@ func (s *AuthService) ValidateAPIKey(key string) (*Claims, error) {
 func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	var merchantID string
 	err := s.db.QueryRow(ctx, `SELECT id FROM merchants WHERE email = $1`, email).Scan(&merchantID)
-	if err != nil {
-		if errors.Is(err, pgx.ErrNoRows) {
-			return nil
-		}
+
+	exists := err == nil
+	if err != nil && !errors.Is(err, pgx.ErrNoRows) {
 		return fmt.Errorf("querying merchant: %w", err)
 	}
 
@@ -220,16 +340,18 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 	rawToken := hex.EncodeToString(tokenBytes)
 	tokenHash := HashAPIKey(rawToken)
 
-	_, err = s.db.Exec(
-		ctx,
-		`INSERT INTO password_reset_tokens (merchant_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
-		merchantID, tokenHash,
-	)
-	if err != nil {
-		return fmt.Errorf("storing reset token: %w", err)
+	if exists {
+		_, err = s.db.Exec(
+			ctx,
+			`INSERT INTO password_reset_tokens (merchant_id, token_hash, expires_at) VALUES ($1, $2, NOW() + INTERVAL '1 hour')`,
+			merchantID, tokenHash,
+		)
+		if err != nil {
+			return fmt.Errorf("storing reset token: %w", err)
+		}
 	}
 
-	log.Info().Str("merchant_id", merchantID).Str("reset_token", rawToken).Msg("password reset token generated")
+	log.Info().Str("email", email).Msg("password reset token generation attempted")
 	return nil
 }
 
@@ -254,7 +376,7 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, password string)
 		return ErrResetTokenUsed
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(password), encrypt.BcryptCost)
 	if err != nil {
 		return fmt.Errorf("hashing password: %w", err)
 	}
@@ -263,7 +385,12 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, password string)
 	if err != nil {
 		return fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
 
 	_, err = tx.Exec(ctx, `UPDATE merchants SET password_hash = $1 WHERE id = $2`, string(hashedPassword), merchantID)
 	if err != nil {
@@ -277,6 +404,11 @@ func (s *AuthService) ResetPassword(ctx context.Context, token, password string)
 
 	if err := tx.Commit(ctx); err != nil {
 		return fmt.Errorf("committing transaction: %w", err)
+	}
+	committed = true
+
+	if s.auditor != nil {
+		s.auditor.Log(ctx, merchantID, "password.reset", "merchant", merchantID, "password reset completed")
 	}
 
 	log.Info().Str("merchant_id", merchantID).Msg("password reset successful")
@@ -298,16 +430,25 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthR
 	).Scan(&id, &name, &passwordHash, &status)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
+			if s.auditor != nil {
+				s.auditor.Log(ctx, "", "login.failed", "merchant", "", fmt.Sprintf("failed login for email: %s (not found)", email))
+			}
 			return nil, ErrInvalidCredentials
 		}
 		return nil, fmt.Errorf("querying merchant: %w", err)
 	}
 
 	if status != "active" {
+		if s.auditor != nil {
+			s.auditor.Log(ctx, id, "login.failed", "merchant", id, fmt.Sprintf("failed login for inactive account: %s", email))
+		}
 		return nil, ErrInvalidCredentials
 	}
 
 	if err := bcrypt.CompareHashAndPassword([]byte(passwordHash), []byte(password)); err != nil {
+		if s.auditor != nil {
+			s.auditor.Log(ctx, id, "login.failed", "merchant", id, fmt.Sprintf("failed login for email: %s (wrong password)", email))
+		}
 		return nil, ErrInvalidCredentials
 	}
 
@@ -318,6 +459,10 @@ func (s *AuthService) Login(ctx context.Context, email, password string) (*AuthR
 	})
 	if err != nil {
 		return nil, err
+	}
+
+	if s.auditor != nil {
+		s.auditor.Log(ctx, id, "login.success", "merchant", id, fmt.Sprintf("successful login for email: %s", email))
 	}
 
 	return &AuthResponse{
@@ -340,7 +485,7 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*AuthR
 		return nil, fmt.Errorf("checking existing email: %w", err)
 	}
 
-	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), bcrypt.DefaultCost)
+	hashedPassword, err := bcrypt.GenerateFromPassword([]byte(req.Password), encrypt.BcryptCost)
 	if err != nil {
 		return nil, fmt.Errorf("hashing password: %w", err)
 	}
@@ -349,7 +494,12 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*AuthR
 	if err != nil {
 		return nil, fmt.Errorf("beginning transaction: %w", err)
 	}
-	defer tx.Rollback(ctx)
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
 
 	var merchantID string
 	secretKey, pubKey, secretHash, pubHash := GenerateSecretAndPublishableKeys()
@@ -386,6 +536,11 @@ func (s *AuthService) Register(ctx context.Context, req RegisterRequest) (*AuthR
 
 	if err := tx.Commit(ctx); err != nil {
 		return nil, fmt.Errorf("committing transaction: %w", err)
+	}
+	committed = true
+
+	if s.auditor != nil {
+		s.auditor.Log(ctx, merchantID, "merchant.created", "merchant", merchantID, fmt.Sprintf("new merchant registered: %s", req.Email))
 	}
 
 	tokenPair, err := s.GenerateTokenPair(Claims{

@@ -9,6 +9,7 @@ import (
 	chimw "github.com/go-chi/chi/v5/middleware"
 	"github.com/go-chi/cors"
 	"github.com/jackc/pgx/v5/pgxpool"
+	"github.com/redis/go-redis/v9"
 	"github.com/rs/zerolog/log"
 
 	"github.com/openpayment/gateway/internal/api/metrics"
@@ -17,12 +18,13 @@ import (
 )
 
 type HealthChecker struct {
-	DB      *pgxpool.Pool
-	Redis   string
-	Procs   []string
-	Uptime  time.Time
-	Version string
-	V1      chi.Router
+	DB           *pgxpool.Pool
+	Redis        string
+	Procs        []string
+	Uptime       time.Time
+	Version      string
+	V1           chi.Router
+	APIUsageMW   func(http.Handler) http.Handler
 }
 
 func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
@@ -30,7 +32,20 @@ func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
 
 	allowedOrigins := getAllowedOrigins(cfg.Environment)
 
-	rateLimiter := middleware.NewRateLimiter(100, 200, time.Second)
+	var rateLimiter middleware.Limiter
+	if cfg.RedisURL != "" {
+		opts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			log.Warn().Err(err).Msg("invalid REDIS_URL, falling back to in-memory rate limiter")
+			rateLimiter = middleware.NewMemoryRateLimiter(100, 200, time.Second)
+		} else {
+			rdb := redis.NewClient(opts)
+			rateLimiter = middleware.NewRedisRateLimiter(rdb, 200, time.Second)
+			log.Info().Msg("using Redis-backed rate limiter")
+		}
+	} else {
+		rateLimiter = middleware.NewMemoryRateLimiter(100, 200, time.Second)
+	}
 
 	r.Use(cors.Handler(cors.Options{
 		AllowedOrigins:   allowedOrigins,
@@ -46,6 +61,9 @@ func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
 	r.Use(middleware.SecurityHeaders)
 	r.Use(middleware.RequestSizeLimiter(1 << 20))
 	r.Use(metrics.Middleware)
+	if hc.APIUsageMW != nil {
+		r.Use(hc.APIUsageMW)
+	}
 
 	r.Get("/", rootInfoHandler(hc))
 
@@ -56,6 +74,7 @@ func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
 	r.Group(func(r chi.Router) {
 		r.Use(middleware.RateLimit(rateLimiter))
 		r.Get("/health", healthHandler(hc))
+		r.Get("/ready", readyHandler(hc))
 	})
 
 	r.Route("/v1", func(r chi.Router) {
@@ -84,6 +103,37 @@ func rootInfoHandler(hc *HealthChecker) http.HandlerFunc {
 			},
 			"documentation": "/docs",
 			"health":        "/health",
+		})
+	}
+}
+
+func readyHandler(hc *HealthChecker) http.HandlerFunc {
+	return func(w http.ResponseWriter, r *http.Request) {
+		ctx, cancel := context.WithTimeout(r.Context(), 5*time.Second)
+		defer cancel()
+
+		checks := make(map[string]healthCheckResult)
+		overallStatus := "ready"
+
+		if hc.DB != nil {
+			if err := hc.DB.Ping(ctx); err != nil {
+				checks["database"] = healthCheckResult{Status: "not_ready", Error: err.Error()}
+				overallStatus = "not_ready"
+			} else {
+				checks["database"] = healthCheckResult{Status: "ready"}
+			}
+		}
+
+		httpStatus := http.StatusOK
+		if overallStatus != "ready" {
+			httpStatus = http.StatusServiceUnavailable
+		}
+
+		RespondJSON(w, httpStatus, healthResponse{
+			Status:  overallStatus,
+			Uptime:  time.Since(hc.Uptime).String(),
+			Version: hc.Version,
+			Checks:  checks,
 		})
 	}
 }

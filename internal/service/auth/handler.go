@@ -139,11 +139,12 @@ func RefreshHandler(authService *AuthService) http.HandlerFunc {
 			return
 		}
 
-		tokenPair, err := authService.GenerateTokenPair(Claims{
-			Role:        "merchant",
-			Permissions: []string{"read", "write"},
-		})
+		tokenPair, err := authService.RefreshAccessToken(r.Context(), body.RefreshToken)
 		if err != nil {
+			if errors.Is(err, ErrInvalidToken) {
+				api.RespondError(w, http.StatusUnauthorized, "auth_error", "invalid_token", "invalid or expired refresh token")
+				return
+			}
 			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "an unexpected error occurred")
 			return
 		}

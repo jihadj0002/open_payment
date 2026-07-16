@@ -11,6 +11,7 @@ import { api } from '@/lib/api'
 import CardForm, { CardFormData } from '@/components/checkout/CardForm'
 import MobileBankingGrid from '@/components/checkout/MobileBankingGrid'
 import NetBankingSection from '@/components/checkout/NetBankingSection'
+import CheckoutErrorBoundary from '@/components/checkout/CheckoutErrorBoundary'
 
 interface CheckoutSession {
   id: string
@@ -36,6 +37,14 @@ const tabs: { id: PaymentTab; label: string; icon: React.ReactNode }[] = [
 ]
 
 export default function CheckoutPage() {
+  return (
+    <CheckoutErrorBoundary>
+      <CheckoutPageContent />
+    </CheckoutErrorBoundary>
+  )
+}
+
+function CheckoutPageContent() {
   const params = useParams()
   const router = useRouter()
   const paymentIntentId = params.payment_intent_id as string
@@ -100,7 +109,6 @@ export default function CheckoutPage() {
         body.customer_phone = customerPhone
       } else if (activeTab === 'card' && cardData) {
         body.provider = 'card'
-        body.customer_phone = cardData.cardholderName
       } else {
         body.provider = 'bkash'
       }
@@ -266,10 +274,6 @@ export default function CheckoutPage() {
               <div className="flex justify-between text-sm">
                 <span className="text-slate-400">Subtotal</span>
                 <span className="text-white">{formatCurrency(session.amount, session.currency)}</span>
-              </div>
-              <div className="flex justify-between text-sm">
-                <span className="text-slate-400">Convenience Fee</span>
-                <span className="text-white">{formatCurrency(0)}</span>
               </div>
               <hr className="border-slate-700" />
               <div className="flex justify-between text-sm font-semibold">

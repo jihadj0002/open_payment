@@ -18,6 +18,8 @@ type Config struct {
 	JWTSecret        string
 	Environment      string
 	EncryptionKey    string
+	TLSCert          string
+	TLSKey           string
 	DBMaxConns       int
 	DBMinConns       int
 	DBMaxLifetime    time.Duration
@@ -43,6 +45,8 @@ func Load() *Config {
 		JWTSecret:     getEnv("JWT_SECRET", ""),
 		Environment:   getEnv("ENVIRONMENT", "development"),
 		EncryptionKey: getEnv("ENCRYPTION_KEY", ""),
+		TLSCert:       getEnv("TLS_CERT", ""),
+		TLSKey:        getEnv("TLS_KEY", ""),
 		DBMaxConns:    getEnvInt("DATABASE_MAX_CONNS", 25),
 		DBMinConns:    getEnvInt("DATABASE_MIN_CONNS", 5),
 		DBMaxLifetime: getEnvDuration("DATABASE_MAX_LIFETIME", 30*time.Minute),

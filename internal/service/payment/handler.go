@@ -88,18 +88,23 @@ func HandleListPayments(svc *Service) http.HandlerFunc {
 		limit, _ := strconv.Atoi(r.URL.Query().Get("limit"))
 		offset, _ := strconv.Atoi(r.URL.Query().Get("offset"))
 
-		intents, err := svc.ListPayments(r.Context(), claims.MerchantID, limit, offset)
+		result, err := svc.ListPayments(r.Context(), claims.MerchantID, limit, offset)
 		if err != nil {
 			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "an unexpected error occurred")
 			return
 		}
 
-		data := make([]interface{}, len(intents))
-		for i, v := range intents {
+		data := make([]interface{}, len(result.Intents))
+		for i, v := range result.Intents {
 			data[i] = v
 		}
 
-		api.RespondJSON(w, http.StatusOK, data)
+		api.RespondJSON(w, http.StatusOK, map[string]interface{}{
+			"data":   data,
+			"total":  result.Total,
+			"limit":  result.Limit,
+			"offset": result.Offset,
+		})
 	}
 }
 

@@ -7,9 +7,16 @@ import (
 
 	"github.com/google/uuid"
 	"github.com/jackc/pgx/v5"
+	"github.com/jackc/pgx/v5/pgconn"
 
 	"github.com/openpayment/gateway/internal/database"
 )
+
+type execQuerier interface {
+	Exec(ctx context.Context, sql string, arguments ...any) (pgconn.CommandTag, error)
+	Query(ctx context.Context, sql string, args ...any) (pgx.Rows, error)
+	QueryRow(ctx context.Context, sql string, args ...any) pgx.Row
+}
 
 type Repository struct {
 	*database.BaseRepository
@@ -21,7 +28,19 @@ func NewRepository(db *database.PostgresDB) *Repository {
 	}
 }
 
+func (r *Repository) Begin(ctx context.Context) (pgx.Tx, error) {
+	return r.Pool.Begin(ctx)
+}
+
 func (r *Repository) CreateEntry(ctx context.Context, e *Entry) error {
+	return r.createEntryTx(ctx, r.Pool, e)
+}
+
+func (r *Repository) CreateEntryTx(ctx context.Context, tx pgx.Tx, e *Entry) error {
+	return r.createEntryTx(ctx, tx, e)
+}
+
+func (r *Repository) createEntryTx(ctx context.Context, q execQuerier, e *Entry) error {
 	e.ID = uuid.New().String()
 	e.CreatedAt = time.Now()
 
@@ -36,10 +55,18 @@ func (r *Repository) CreateEntry(ctx context.Context, e *Entry) error {
 }
 
 func (r *Repository) GetCurrentBalance(ctx context.Context, merchantID, currency string) (int64, error) {
+	return r.getCurrentBalanceTx(ctx, r.Pool, merchantID, currency)
+}
+
+func (r *Repository) GetCurrentBalanceTx(ctx context.Context, tx pgx.Tx, merchantID, currency string) (int64, error) {
+	return r.getCurrentBalanceTx(ctx, tx, merchantID, currency)
+}
+
+func (r *Repository) getCurrentBalanceTx(ctx context.Context, q execQuerier, merchantID, currency string) (int64, error) {
 	query := `SELECT balance_after FROM ledger_entries WHERE merchant_id=$1 AND currency=$2 ORDER BY created_at DESC LIMIT 1`
 
 	var balance int64
-	err := r.Pool.QueryRow(ctx, query, merchantID, currency).Scan(&balance)
+	err := q.QueryRow(ctx, query, merchantID, currency).Scan(&balance)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
 			return 0, nil

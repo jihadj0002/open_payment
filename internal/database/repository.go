@@ -15,16 +15,29 @@ func NewBaseRepository(db *PostgresDB) *BaseRepository {
 	return &BaseRepository{Pool: db.Pool}
 }
 
+func (r *BaseRepository) Begin(ctx context.Context) (pgx.Tx, error) {
+	return r.Pool.Begin(ctx)
+}
+
 func (r *BaseRepository) WithTx(ctx context.Context, fn func(pgx.Tx) error) error {
 	tx, err := r.Pool.Begin(ctx)
 	if err != nil {
 		return err
 	}
-	defer tx.Rollback(ctx)
+	committed := false
+	defer func() {
+		if !committed {
+			tx.Rollback(ctx)
+		}
+	}()
 
 	if err := fn(tx); err != nil {
 		return err
 	}
 
-	return tx.Commit(ctx)
+	if err := tx.Commit(ctx); err != nil {
+		return err
+	}
+	committed = true
+	return nil
 }
