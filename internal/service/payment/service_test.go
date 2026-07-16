@@ -72,6 +72,24 @@ func (m *mockRepo) CreateTransaction(ctx context.Context, tx *Transaction) error
 	return args.Error(0)
 }
 
+func (m *mockRepo) UpdatePaymentIntentProvider(ctx context.Context, id, providerRef, redirectURL string) error {
+	args := m.Called(ctx, id, providerRef, redirectURL)
+	return args.Error(0)
+}
+
+func (m *mockRepo) UpdatePaymentIntentRedirect(ctx context.Context, id, redirectURL string) error {
+	args := m.Called(ctx, id, redirectURL)
+	return args.Error(0)
+}
+
+func (m *mockRepo) GetPaymentIntentByProviderRef(ctx context.Context, providerRef string) (*PaymentIntent, error) {
+	args := m.Called(ctx, providerRef)
+	if args.Get(0) == nil {
+		return nil, args.Error(1)
+	}
+	return args.Get(0).(*PaymentIntent), args.Error(1)
+}
+
 type mockProcessor struct {
 	mock.Mock
 }
@@ -419,7 +437,6 @@ func TestVoidPayment_InvalidState(t *testing.T) {
 		name   string
 		status string
 	}{
-		{"created", StatusCreated},
 		{"captured", StatusCaptured},
 		{"succeeded", StatusSucceeded},
 		{"failed", StatusFailed},
@@ -455,13 +472,14 @@ func TestProcessPayment_ProcessorSuccess(t *testing.T) {
 
 	merchantID := "merch_1"
 	pi := &PaymentIntent{
-		ID:            "pi_1",
-		MerchantID:    merchantID,
-		Amount:        1000,
+		ID:               "pi_1",
+		MerchantID:       merchantID,
+		Amount:           1000,
 		AmountCapturable: 1000,
-		Currency:      "USD",
-		Status:        StatusPending,
-		CaptureMethod: "automatic",
+		Currency:         "USD",
+		Status:           StatusPending,
+		CaptureMethod:    "automatic",
+		PaymentMethod:    "card",
 	}
 
 	procResp := &ProcessorResponse{
@@ -497,11 +515,12 @@ func TestProcessPayment_ProcessorFailure(t *testing.T) {
 
 	merchantID := "merch_1"
 	pi := &PaymentIntent{
-		ID:         "pi_1",
-		MerchantID: merchantID,
-		Amount:     1000,
-		Currency:   "USD",
-		Status:     StatusPending,
+		ID:            "pi_1",
+		MerchantID:    merchantID,
+		Amount:        1000,
+		Currency:      "USD",
+		Status:        StatusPending,
+		PaymentMethod: "card",
 	}
 
 	procResp := &ProcessorResponse{
@@ -530,11 +549,12 @@ func TestProcessPayment_ProcessorServerError(t *testing.T) {
 	svc := NewService(repo, proc)
 
 	pi := &PaymentIntent{
-		ID:         "pi_2",
-		MerchantID: "merch_1",
-		Amount:     2000,
-		Currency:   "USD",
-		Status:     StatusPending,
+		ID:            "pi_2",
+		MerchantID:    "merch_1",
+		Amount:        2000,
+		Currency:      "USD",
+		Status:        StatusPending,
+		PaymentMethod: "card",
 	}
 
 	repo.On("UpdatePaymentIntentStatus", mock.Anything, "pi_2", StatusProcessing).Return(nil).Once()

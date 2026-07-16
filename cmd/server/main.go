@@ -18,6 +18,9 @@ import (
 	"github.com/openpayment/gateway/internal/database"
 	"github.com/openpayment/gateway/internal/pkg/encrypt"
 	"github.com/openpayment/gateway/internal/pkg/logger"
+	"github.com/openpayment/gateway/internal/processor/bkash"
+	"github.com/openpayment/gateway/internal/processor/nagad"
+	"github.com/openpayment/gateway/internal/processor/wallet"
 	"github.com/openpayment/gateway/internal/service/admin"
 	"github.com/openpayment/gateway/internal/service/auth"
 	"github.com/openpayment/gateway/internal/service/customer"
@@ -80,6 +83,68 @@ func main() {
 		WithWebhook(webhookSvc).
 		WithLedger(ledgerSvc)
 
+	bkashAppKey := os.Getenv("BKASH_APP_KEY")
+	bkashAppSecret := os.Getenv("BKASH_APP_SECRET")
+	bkashUsername := os.Getenv("BKASH_USERNAME")
+	bkashPassword := os.Getenv("BKASH_PASSWORD")
+	bkashBaseURL := os.Getenv("BKASH_BASE_URL")
+	if bkashBaseURL == "" {
+		bkashBaseURL = "https://checkout.sandbox.bka.sh/v1.2.0-beta"
+	}
+
+	nagadMerchantID := os.Getenv("NAGAD_MERCHANT_ID")
+	nagadMerchantPrivateKey := os.Getenv("NAGAD_MERCHANT_PRIVATE_KEY")
+	nagadPGPublicKey := os.Getenv("NAGAD_PG_PUBLIC_KEY")
+	nagadBaseURL := os.Getenv("NAGAD_BASE_URL")
+	if nagadBaseURL == "" {
+		nagadBaseURL = "https://sandbox.nagad.com"
+	}
+
+	publicURL := os.Getenv("PUBLIC_URL")
+	if publicURL == "" {
+		publicURL = "http://localhost:8080"
+	}
+
+	if bkashAppKey != "" && bkashAppSecret != "" {
+		tokenManager := bkash.NewTokenManager(bkashBaseURL, bkashAppKey, bkashAppSecret, bkashUsername, bkashPassword)
+		if err := tokenManager.Start(); err != nil {
+			log.Warn().Err(err).Msg("failed to start bKash token manager (running without bKash)")
+		} else {
+			bkashAdapter := bkash.NewAdapter(tokenManager, bkashAppKey, bkashBaseURL, publicURL)
+			bkashWalletProvider := payment.NewBkashWalletProvider(bkashAdapter)
+			paymentSvc.WithWalletProvider(bkashWalletProvider)
+			log.Info().Msg("bKash wallet provider initialized")
+		}
+	} else {
+		log.Warn().Msg("BKASH_APP_KEY and BKASH_APP_SECRET not set - bKash integration disabled")
+	}
+
+	if nagadMerchantID != "" && nagadMerchantPrivateKey != "" {
+		nagadCreds := nagad.Credentials{
+			MerchantID:         nagadMerchantID,
+			MerchantPrivateKey: nagadMerchantPrivateKey,
+			PGPublicKey:        nagadPGPublicKey,
+			BaseURL:            nagadBaseURL,
+		}
+		nagadAdapter, err := nagad.NewAdapter(nagadCreds, publicURL)
+		if err != nil {
+			log.Warn().Err(err).Msg("failed to create Nagad adapter (running without Nagad)")
+		} else {
+			nagadWalletProvider := payment.NewNagadWalletProvider(nagadAdapter)
+			paymentSvc.WithWalletProvider(nagadWalletProvider)
+			log.Info().Msg("Nagad wallet provider initialized")
+		}
+	} else {
+		log.Warn().Msg("NAGAD_MERCHANT_ID and NAGAD_MERCHANT_PRIVATE_KEY not set - Nagad integration disabled")
+	}
+
+	if os.Getenv("MOCK_WALLET_ENABLED") == "true" {
+		mockAdapter := wallet.NewMockAdapter(publicURL)
+		mockWalletProvider := payment.NewMockWalletProvider(mockAdapter)
+		paymentSvc.WithWalletProvider(mockWalletProvider)
+		log.Info().Msg("mock wallet provider initialized")
+	}
+
 	hc := &api.HealthChecker{
 		DB:      db.Pool,
 		Uptime:  time.Now(),
@@ -94,6 +159,10 @@ func main() {
 	auth.RegisterAuthRoutes(v1, authSvc, authRateLimiter)
 	merchant.RegisterMerchantRoutes(v1, merchantSvc, auth.AuthMiddleware(authSvc))
 	payment.RegisterPaymentRoutes(v1, paymentSvc, auth.AuthMiddleware(authSvc))
+
+	payment.RegisterCheckoutRoutes(v1, paymentSvc)
+	payment.RegisterBkashRoutes(v1, paymentSvc)
+	payment.RegisterNagadRoutes(v1, paymentSvc)
 
 	customerRepo := customer.NewRepository(db)
 	customerSvc := customer.NewService(customerRepo)

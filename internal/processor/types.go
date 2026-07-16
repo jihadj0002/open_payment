@@ -1,5 +1,10 @@
 package processor
 
+const (
+	ProviderBKash = "bkash"
+	ProviderNagad = "nagad"
+)
+
 type CardRequest struct {
 	CardNumber     string `json:"card_number"`
 	ExpiryMonth    string `json:"expiry_month"`
@@ -29,6 +34,15 @@ type WalletRequest struct {
 	Currency       string `json:"currency"`
 	MerchantRef    string `json:"merchant_ref"`
 	IdempotencyKey string `json:"idempotency_key"`
+}
+
+type WalletInitResponse struct {
+	Success       bool   `json:"success"`
+	RedirectURL   string `json:"redirect_url"`
+	PaymentRef    string `json:"payment_ref"`
+	ProviderRef   string `json:"provider_ref"`
+	Status        string `json:"status"`
+	Message       string `json:"message,omitempty"`
 }
 
 type ProcessorResponse struct {

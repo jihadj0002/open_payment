@@ -26,7 +26,7 @@ func NewRepository(db *database.PostgresDB) *Repository {
 
 func (r *Repository) CreatePaymentIntent(ctx context.Context, pi *PaymentIntent) error {
 	pi.ID = uuid.New().String()
-	pi.ClientSecret = "pi_" + uuid.New().String()
+	pi.ClientSecret = "pi_" + uuid.New().String() + "_secret_" + uuid.New().String()
 	pi.CreatedAt = time.Now()
 	pi.UpdatedAt = time.Now()
 
@@ -35,12 +35,17 @@ func (r *Repository) CreatePaymentIntent(ctx context.Context, pi *PaymentIntent)
 		return fmt.Errorf("marshal metadata: %w", err)
 	}
 
-	query := `INSERT INTO payment_intents (id, merchant_id, customer_id, amount, currency, status, idempotency_key, description, metadata, processor, created_at, updated_at)
-		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12)`
+	query := `INSERT INTO payment_intents 
+		(id, merchant_id, customer_id, amount, amount_capturable, amount_received, capture_method, currency, status, 
+		 idempotency_key, description, metadata, processor, wallet_provider,
+		 return_url, cancel_url, client_secret, created_at, updated_at)
+		VALUES ($1, $2, $3, $4, $5, $6, $7, $8, $9, $10, $11, $12, $13, $14, $15, $16, $17, $18, $19)`
 
 	_, err = r.Pool.Exec(ctx, query,
-		pi.ID, pi.MerchantID, pi.CustomerID, pi.Amount, pi.Currency, pi.Status,
-		pi.IdempotencyKey, pi.Description, metaBytes, pi.PaymentMethod,
+		pi.ID, pi.MerchantID, pi.CustomerID, pi.Amount, pi.AmountCapturable, pi.AmountReceived, pi.CaptureMethod,
+		pi.Currency, pi.Status,
+		pi.IdempotencyKey, pi.Description, metaBytes, pi.PaymentMethod, pi.WalletProvider,
+		pi.ReturnURL, pi.CancelURL, pi.ClientSecret,
 		pi.CreatedAt, pi.UpdatedAt,
 	)
 	if err != nil {
@@ -51,17 +56,40 @@ func (r *Repository) CreatePaymentIntent(ctx context.Context, pi *PaymentIntent)
 }
 
 func (r *Repository) GetPaymentIntent(ctx context.Context, id, merchantID string) (*PaymentIntent, error) {
-	query := `SELECT id, merchant_id, customer_id, amount, currency, status, idempotency_key, description, metadata, failure_reason, processor, created_at, updated_at
-		FROM payment_intents WHERE id = $1 AND merchant_id = $2`
+	var whereClause string
+	var args []interface{}
+
+	if merchantID != "" {
+		whereClause = "WHERE pi.id = $1 AND pi.merchant_id = $2"
+		args = []interface{}{id, merchantID}
+	} else {
+		whereClause = "WHERE pi.id = $1"
+		args = []interface{}{id}
+	}
+
+	query := `SELECT pi.id, pi.merchant_id, pi.customer_id, pi.amount, pi.amount_capturable, pi.amount_received,
+		pi.capture_method, pi.currency, pi.status, 
+		pi.idempotency_key, pi.description, pi.metadata, pi.failure_reason, pi.processor,
+		COALESCE(pi.wallet_provider, ''), pi.return_url, pi.cancel_url, pi.client_secret,
+		COALESCE(pi.redirect_url, ''), COALESCE(pi.provider_ref, ''),
+		pi.created_at, pi.updated_at
+		FROM payment_intents pi ` + whereClause
 
 	var pi PaymentIntent
 	var metaBytes []byte
 	var failureReason *string
+	var redirectURL string
+	var providerRef string
+	var walletProvider string
 
-	err := r.Pool.QueryRow(ctx, query, id, merchantID).Scan(
-		&pi.ID, &pi.MerchantID, &pi.CustomerID, &pi.Amount, &pi.Currency, &pi.Status,
+	err := r.Pool.QueryRow(ctx, query, args...).Scan(
+		&pi.ID, &pi.MerchantID, &pi.CustomerID, &pi.Amount, &pi.AmountCapturable, &pi.AmountReceived,
+		&pi.CaptureMethod, &pi.Currency, &pi.Status,
 		&pi.IdempotencyKey, &pi.Description, &metaBytes, &failureReason,
-		&pi.PaymentMethod, &pi.CreatedAt, &pi.UpdatedAt,
+		&pi.PaymentMethod, &walletProvider,
+		&pi.ReturnURL, &pi.CancelURL, &pi.ClientSecret,
+		&redirectURL, &providerRef,
+		&pi.CreatedAt, &pi.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -80,11 +108,33 @@ func (r *Repository) GetPaymentIntent(ctx context.Context, id, merchantID string
 		pi.ErrorMessage = failureReason
 	}
 
-	pi.AmountCapturable = pi.Amount
-	pi.CaptureMethod = "automatic"
-	pi.ClientSecret = "pi_" + pi.ID
+	if redirectURL != "" {
+		pi.RedirectURL = &redirectURL
+	}
+	if providerRef != "" {
+		pi.ProviderRef = &providerRef
+	}
+	pi.WalletProvider = walletProvider
 
 	return &pi, nil
+}
+
+func (r *Repository) UpdatePaymentIntentProvider(ctx context.Context, id, providerRef, redirectURL string) error {
+	query := `UPDATE payment_intents SET provider_ref = $1, redirect_url = $2, updated_at = NOW() WHERE id = $3`
+	_, err := r.Pool.Exec(ctx, query, providerRef, redirectURL, id)
+	if err != nil {
+		return fmt.Errorf("update payment intent provider: %w", err)
+	}
+	return nil
+}
+
+func (r *Repository) UpdatePaymentIntentRedirect(ctx context.Context, id, redirectURL string) error {
+	query := `UPDATE payment_intents SET redirect_url = $1, updated_at = NOW() WHERE id = $2`
+	_, err := r.Pool.Exec(ctx, query, redirectURL, id)
+	if err != nil {
+		return fmt.Errorf("update payment intent redirect: %w", err)
+	}
+	return nil
 }
 
 func (r *Repository) UpdatePaymentIntentStatus(ctx context.Context, id, status string) error {
@@ -184,8 +234,13 @@ func (r *Repository) UpdatePaymentIntentCapture(ctx context.Context, id string, 
 }
 
 func (r *Repository) ListPaymentIntents(ctx context.Context, merchantID string, limit, offset int) ([]PaymentIntent, error) {
-	query := `SELECT id, merchant_id, customer_id, amount, currency, status, idempotency_key, description, metadata, failure_reason, processor, created_at, updated_at
-		FROM payment_intents WHERE merchant_id = $1 ORDER BY created_at DESC LIMIT $2 OFFSET $3`
+	query := `SELECT pi.id, pi.merchant_id, pi.customer_id, pi.amount, pi.amount_capturable, pi.amount_received,
+		pi.capture_method, pi.currency, pi.status,
+		pi.idempotency_key, pi.description, pi.metadata, pi.failure_reason, pi.processor,
+		COALESCE(pi.wallet_provider, ''), pi.return_url, pi.cancel_url, pi.client_secret,
+		COALESCE(pi.redirect_url, ''), COALESCE(pi.provider_ref, ''),
+		pi.created_at, pi.updated_at
+		FROM payment_intents pi WHERE pi.merchant_id = $1 ORDER BY pi.created_at DESC LIMIT $2 OFFSET $3`
 
 	rows, err := r.Pool.Query(ctx, query, merchantID, limit, offset)
 	if err != nil {
@@ -198,11 +253,18 @@ func (r *Repository) ListPaymentIntents(ctx context.Context, merchantID string, 
 		var pi PaymentIntent
 		var metaBytes []byte
 		var failureReason *string
+		var redirectURL string
+		var providerRef string
+		var walletProvider string
 
 		err := rows.Scan(
-			&pi.ID, &pi.MerchantID, &pi.CustomerID, &pi.Amount, &pi.Currency, &pi.Status,
+			&pi.ID, &pi.MerchantID, &pi.CustomerID, &pi.Amount, &pi.AmountCapturable, &pi.AmountReceived,
+			&pi.CaptureMethod, &pi.Currency, &pi.Status,
 			&pi.IdempotencyKey, &pi.Description, &metaBytes, &failureReason,
-			&pi.PaymentMethod, &pi.CreatedAt, &pi.UpdatedAt,
+			&pi.PaymentMethod, &walletProvider,
+			&pi.ReturnURL, &pi.CancelURL, &pi.ClientSecret,
+			&redirectURL, &providerRef,
+			&pi.CreatedAt, &pi.UpdatedAt,
 		)
 		if err != nil {
 			return nil, fmt.Errorf("scan payment intent: %w", err)
@@ -218,9 +280,13 @@ func (r *Repository) ListPaymentIntents(ctx context.Context, merchantID string, 
 			pi.ErrorMessage = failureReason
 		}
 
-		pi.AmountCapturable = pi.Amount
-		pi.CaptureMethod = "automatic"
-		pi.ClientSecret = "pi_" + pi.ID
+		if redirectURL != "" {
+			pi.RedirectURL = &redirectURL
+		}
+		if providerRef != "" {
+			pi.ProviderRef = &providerRef
+		}
+		pi.WalletProvider = walletProvider
 
 		intents = append(intents, pi)
 	}
@@ -237,17 +303,29 @@ func (r *Repository) ListPaymentIntents(ctx context.Context, merchantID string, 
 }
 
 func (r *Repository) GetByIdempotencyKey(ctx context.Context, key, merchantID string) (*PaymentIntent, error) {
-	query := `SELECT id, merchant_id, customer_id, amount, currency, status, idempotency_key, description, metadata, failure_reason, processor, created_at, updated_at
-		FROM payment_intents WHERE idempotency_key = $1 AND merchant_id = $2`
+	query := `SELECT pi.id, pi.merchant_id, pi.customer_id, pi.amount, pi.amount_capturable, pi.amount_received,
+		pi.capture_method, pi.currency, pi.status,
+		pi.idempotency_key, pi.description, pi.metadata, pi.failure_reason, pi.processor,
+		COALESCE(pi.wallet_provider, ''), pi.return_url, pi.cancel_url, pi.client_secret,
+		COALESCE(pi.redirect_url, ''), COALESCE(pi.provider_ref, ''),
+		pi.created_at, pi.updated_at
+		FROM payment_intents pi WHERE pi.idempotency_key = $1 AND pi.merchant_id = $2`
 
 	var pi PaymentIntent
 	var metaBytes []byte
 	var failureReason *string
+	var redirectURL string
+	var providerRef string
+	var walletProvider string
 
 	err := r.Pool.QueryRow(ctx, query, key, merchantID).Scan(
-		&pi.ID, &pi.MerchantID, &pi.CustomerID, &pi.Amount, &pi.Currency, &pi.Status,
+		&pi.ID, &pi.MerchantID, &pi.CustomerID, &pi.Amount, &pi.AmountCapturable, &pi.AmountReceived,
+		&pi.CaptureMethod, &pi.Currency, &pi.Status,
 		&pi.IdempotencyKey, &pi.Description, &metaBytes, &failureReason,
-		&pi.PaymentMethod, &pi.CreatedAt, &pi.UpdatedAt,
+		&pi.PaymentMethod, &walletProvider,
+		&pi.ReturnURL, &pi.CancelURL, &pi.ClientSecret,
+		&redirectURL, &providerRef,
+		&pi.CreatedAt, &pi.UpdatedAt,
 	)
 	if err != nil {
 		if errors.Is(err, pgx.ErrNoRows) {
@@ -266,8 +344,13 @@ func (r *Repository) GetByIdempotencyKey(ctx context.Context, key, merchantID st
 		pi.ErrorMessage = failureReason
 	}
 
-	pi.AmountCapturable = pi.Amount
-	pi.CaptureMethod = "automatic"
+	if redirectURL != "" {
+		pi.RedirectURL = &redirectURL
+	}
+	if providerRef != "" {
+		pi.ProviderRef = &providerRef
+	}
+	pi.WalletProvider = walletProvider
 	pi.ClientSecret = "pi_" + pi.ID
 
 	return &pi, nil
@@ -344,4 +427,57 @@ func (r *Repository) GetTransaction(ctx context.Context, id string) (*Transactio
 	}
 
 	return &t, nil
+}
+
+func (r *Repository) GetPaymentIntentByProviderRef(ctx context.Context, providerRef string) (*PaymentIntent, error) {
+	query := `SELECT pi.id, pi.merchant_id, pi.customer_id, pi.amount, pi.amount_capturable, pi.amount_received,
+		pi.capture_method, pi.currency, pi.status,
+		pi.idempotency_key, pi.description, pi.metadata, pi.failure_reason, pi.processor,
+		COALESCE(pi.wallet_provider, ''), pi.return_url, pi.cancel_url, pi.client_secret,
+		COALESCE(pi.redirect_url, ''), COALESCE(pi.provider_ref, ''),
+		pi.created_at, pi.updated_at
+		FROM payment_intents pi WHERE pi.provider_ref = $1`
+
+	var pi PaymentIntent
+	var metaBytes []byte
+	var failureReason *string
+	var redirectURL string
+	var providerRefScanned string
+	var walletProvider string
+
+	err := r.Pool.QueryRow(ctx, query, providerRef).Scan(
+		&pi.ID, &pi.MerchantID, &pi.CustomerID, &pi.Amount, &pi.AmountCapturable, &pi.AmountReceived,
+		&pi.CaptureMethod, &pi.Currency, &pi.Status,
+		&pi.IdempotencyKey, &pi.Description, &metaBytes, &failureReason,
+		&pi.PaymentMethod, &walletProvider,
+		&pi.ReturnURL, &pi.CancelURL, &pi.ClientSecret,
+		&redirectURL, &providerRefScanned,
+		&pi.CreatedAt, &pi.UpdatedAt,
+	)
+	if err != nil {
+		if errors.Is(err, pgx.ErrNoRows) {
+			return nil, pkgErr.ErrNotFound
+		}
+		return nil, fmt.Errorf("get payment intent by provider ref: %w", err)
+	}
+
+	if metaBytes != nil {
+		if err := json.Unmarshal(metaBytes, &pi.Metadata); err != nil {
+			return nil, fmt.Errorf("unmarshal metadata: %w", err)
+		}
+	}
+
+	if failureReason != nil {
+		pi.ErrorMessage = failureReason
+	}
+
+	if redirectURL != "" {
+		pi.RedirectURL = &redirectURL
+	}
+	if providerRefScanned != "" {
+		pi.ProviderRef = &providerRefScanned
+	}
+	pi.WalletProvider = walletProvider
+
+	return &pi, nil
 }

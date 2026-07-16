@@ -11,32 +11,37 @@ var (
 )
 
 const (
-	StatusCreated    = "created"
-	StatusPending    = "pending"
-	StatusProcessing = "processing"
-	StatusAuthorized = "authorized"
-	StatusCaptured   = "captured"
-	StatusSucceeded  = "succeeded"
-	StatusFailed     = "failed"
-	StatusCanceled   = "canceled"
-	StatusRefunded   = "refunded"
-	StatusExpired    = "expired"
+	StatusCreated         = "created"
+	StatusPending         = "pending"
+	StatusProcessing      = "processing"
+	StatusAuthorized      = "authorized"
+	StatusCaptured        = "captured"
+	StatusSucceeded       = "succeeded"
+	StatusFailed          = "failed"
+	StatusCanceled        = "canceled"
+	StatusRefunded        = "refunded"
+	StatusExpired         = "expired"
+	StatusWalletInitiated = "wallet_initiated"
 )
 
 var transitions = map[string]map[string]bool{
 	StatusCreated: {
-		StatusPending:  true,
-		StatusFailed:   true,
-		StatusCanceled: true,
+		StatusPending:         true,
+		StatusFailed:          true,
+		StatusCanceled:        true,
+		StatusWalletInitiated: true,
 	},
 	StatusPending: {
-		StatusProcessing: true,
-		StatusFailed:     true,
-		StatusCanceled:   true,
+		StatusProcessing:      true,
+		StatusFailed:          true,
+		StatusCanceled:        true,
+		StatusWalletInitiated: true,
 	},
 	StatusProcessing: {
 		StatusAuthorized: true,
 		StatusFailed:     true,
+		StatusCaptured:   true,
+		StatusSucceeded:  true,
 	},
 	StatusAuthorized: {
 		StatusCaptured: true,
@@ -46,6 +51,11 @@ var transitions = map[string]map[string]bool{
 	StatusCaptured: {
 		StatusSucceeded: true,
 		StatusRefunded:  true,
+	},
+	StatusWalletInitiated: {
+		StatusProcessing: true,
+		StatusFailed:     true,
+		StatusCanceled:   true,
 	},
 	StatusSucceeded: {},
 	StatusFailed:    {},

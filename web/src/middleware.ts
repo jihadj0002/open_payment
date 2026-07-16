@@ -1,7 +1,7 @@
 import { NextResponse } from 'next/server'
 import type { NextRequest } from 'next/server'
 
-const publicRoutes = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/api/auth/login']
+const publicRoutes = ['/', '/login', '/register', '/forgot-password', '/reset-password', '/api/auth/login', '/checkout']
 const staticPatterns = ['/_next/static', '/_next/image', '/favicon.ico']
 
 export function middleware(request: NextRequest) {

@@ -278,6 +278,7 @@ func TestIntegration_AutoCapturePaymentFlow(t *testing.T) {
 		Currency:         "USD",
 		Status:           StatusPending,
 		CaptureMethod:    "automatic",
+		PaymentMethod:    "card",
 	}
 
 	procResp := &ProcessorResponse{
@@ -326,6 +327,7 @@ func TestIntegration_PaymentFailureFlow(t *testing.T) {
 		Currency:         "USD",
 		Status:           StatusPending,
 		CaptureMethod:    "automatic",
+		PaymentMethod:    "card",
 	}
 
 	repo.On("UpdatePaymentIntentStatus", mock.Anything, paymentID, StatusProcessing).Return(nil).Once()

@@ -20,12 +20,19 @@ func TestIsValidTransition_Valid(t *testing.T) {
 		{StatusPending, StatusFailed},
 		{StatusPending, StatusCanceled},
 		{StatusProcessing, StatusAuthorized},
+		{StatusProcessing, StatusCaptured},
+		{StatusProcessing, StatusSucceeded},
 		{StatusProcessing, StatusFailed},
 		{StatusAuthorized, StatusCaptured},
 		{StatusAuthorized, StatusCanceled},
 		{StatusAuthorized, StatusFailed},
 		{StatusCaptured, StatusSucceeded},
 		{StatusCaptured, StatusRefunded},
+		{StatusCreated, StatusWalletInitiated},
+		{StatusPending, StatusWalletInitiated},
+		{StatusWalletInitiated, StatusProcessing},
+		{StatusWalletInitiated, StatusFailed},
+		{StatusWalletInitiated, StatusCanceled},
 	}
 
 	for _, tt := range validTransitions {
@@ -52,7 +59,6 @@ func TestIsValidTransition_Invalid(t *testing.T) {
 		{StatusPending, StatusSucceeded},
 		{StatusProcessing, StatusCreated},
 		{StatusProcessing, StatusPending},
-		{StatusProcessing, StatusCaptured},
 		{StatusProcessing, StatusCanceled},
 		{StatusProcessing, StatusRefunded},
 		{StatusAuthorized, StatusCreated},

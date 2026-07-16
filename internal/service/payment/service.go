@@ -16,17 +16,34 @@ var supportedCurrencies = map[string]bool{
 }
 
 type Service struct {
-	repo       PaymentRepository
-	processor  Processor
-	webhookSvc WebhookService
-	ledgerSvc  LedgerService
+	repo            PaymentRepository
+	processor       Processor
+	walletProviders map[string]WalletProvider
+	bankProvider    BankProvider
+	webhookSvc      WebhookService
+	ledgerSvc       LedgerService
 }
 
 func NewService(repo PaymentRepository, processor Processor) *Service {
 	return &Service{
-		repo:      repo,
-		processor: processor,
+		repo:            repo,
+		processor:       processor,
+		walletProviders: make(map[string]WalletProvider),
 	}
+}
+
+func (s *Service) WithWalletProvider(p WalletProvider) *Service {
+	s.walletProviders[p.GetProviderName()] = p
+	return s
+}
+
+func (s *Service) WithBankProvider(p BankProvider) *Service {
+	s.bankProvider = p
+	return s
+}
+
+func (s *Service) GetWalletProvider(name string) WalletProvider {
+	return s.walletProviders[name]
 }
 
 func (s *Service) WithWebhook(svc WebhookService) *Service {
@@ -98,6 +115,14 @@ func (s *Service) GetPayment(ctx context.Context, id, merchantID string) (*Payme
 	return s.repo.GetPaymentIntent(ctx, id, merchantID)
 }
 
+func (s *Service) GetPaymentByID(ctx context.Context, id string) (*PaymentIntent, error) {
+	pi, err := s.repo.GetPaymentIntent(ctx, id, "")
+	if err != nil {
+		return nil, err
+	}
+	return pi, nil
+}
+
 func (s *Service) ProcessPayment(ctx context.Context, pi *PaymentIntent) error {
 	if !IsValidTransition(pi.Status, StatusProcessing) {
 		return ErrInvalidStateTransition
@@ -108,6 +133,25 @@ func (s *Service) ProcessPayment(ctx context.Context, pi *PaymentIntent) error {
 		return fmt.Errorf("update to processing: %w", err)
 	}
 
+	switch pi.PaymentMethod {
+	case "card":
+		return s.processCardPayment(ctx, pi)
+	case "wallet":
+		return s.processWalletPayment(ctx, pi)
+	case "bank_transfer":
+		return s.processBankTransfer(ctx, pi)
+	default:
+		pi.Status = StatusFailed
+		errMsg := fmt.Sprintf("unsupported payment method: %s", pi.PaymentMethod)
+		pi.ErrorMessage = &errMsg
+		if updateErr := s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed); updateErr != nil {
+			return fmt.Errorf("update to failed: %w", updateErr)
+		}
+		return fmt.Errorf("unsupported payment method: %s", pi.PaymentMethod)
+	}
+}
+
+func (s *Service) processCardPayment(ctx context.Context, pi *PaymentIntent) error {
 	cardReq := CardRequest{
 		Amount:         pi.Amount,
 		Currency:       pi.Currency,
@@ -126,6 +170,119 @@ func (s *Service) ProcessPayment(ctx context.Context, pi *PaymentIntent) error {
 		return fmt.Errorf("processor error: %w", err)
 	}
 
+	return s.finalizePayment(ctx, pi, procResp)
+}
+
+func (s *Service) processWalletPayment(ctx context.Context, pi *PaymentIntent) error {
+	if len(s.walletProviders) == 0 {
+		pi.Status = StatusFailed
+		errMsg := "no wallet providers configured"
+		pi.ErrorMessage = &errMsg
+		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		return fmt.Errorf("no wallet providers configured")
+	}
+
+	providerName := pi.WalletProvider
+	if providerName == "" {
+		providerName = "bkash"
+	}
+
+	provider, ok := s.walletProviders[providerName]
+	if !ok {
+		pi.Status = StatusFailed
+		errMsg := fmt.Sprintf("wallet provider %q not found", providerName)
+		pi.ErrorMessage = &errMsg
+		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		return fmt.Errorf("wallet provider %q not found", providerName)
+	}
+
+	customerPhone := ""
+	if pi.Metadata != nil {
+		customerPhone = pi.Metadata["customer_phone"]
+	}
+
+	returnURL := ""
+	cancelURL := ""
+	if pi.ReturnURL != nil {
+		returnURL = *pi.ReturnURL
+	}
+
+	initReq := WalletInitRequest{
+		Amount:        pi.Amount,
+		Currency:      pi.Currency,
+		MerchantRef:   pi.ID,
+		CustomerPhone: customerPhone,
+		ReturnURL:     returnURL,
+		CancelURL:     cancelURL,
+	}
+
+	initResp, err := provider.InitiatePayment(ctx, initReq)
+	if err != nil {
+		pi.Status = StatusFailed
+		errMsg := err.Error()
+		pi.ErrorMessage = &errMsg
+		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		return fmt.Errorf("%s init failed: %w", providerName, err)
+	}
+
+	if !initResp.Success {
+		pi.Status = StatusFailed
+		pi.ErrorMessage = &initResp.Message
+		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		return fmt.Errorf("%s init declined: %s", providerName, initResp.Message)
+	}
+
+	pi.ProviderRef = &initResp.ProviderRef
+	pi.RedirectURL = &initResp.RedirectURL
+	s.repo.UpdatePaymentIntentProvider(ctx, pi.ID, initResp.ProviderRef, initResp.RedirectURL)
+
+	if err := s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusWalletInitiated); err != nil {
+		return fmt.Errorf("update to wallet_initiated: %w", err)
+	}
+
+	pi.Status = StatusWalletInitiated
+
+	return nil
+}
+
+func (s *Service) processBankTransfer(ctx context.Context, pi *PaymentIntent) error {
+	if s.bankProvider == nil {
+		pi.Status = StatusFailed
+		errMsg := "bank transfer provider not configured"
+		pi.ErrorMessage = &errMsg
+		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		return fmt.Errorf("bank transfer provider not configured")
+	}
+
+	initReq := BankInitRequest{
+		Amount:      pi.Amount,
+		Currency:    pi.Currency,
+		MerchantRef: pi.ID,
+	}
+
+	initResp, err := s.bankProvider.InitiatePayment(ctx, initReq)
+	if err != nil {
+		pi.Status = StatusFailed
+		errMsg := err.Error()
+		pi.ErrorMessage = &errMsg
+		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		return fmt.Errorf("bank init failed: %w", err)
+	}
+
+	if !initResp.Success {
+		pi.Status = StatusFailed
+		pi.ErrorMessage = &initResp.Message
+		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		return fmt.Errorf("bank init declined: %s", initResp.Message)
+	}
+
+	pi.RedirectURL = &initResp.RedirectURL
+	s.repo.UpdatePaymentIntentRedirect(ctx, pi.ID, initResp.RedirectURL)
+	pi.Status = StatusWalletInitiated
+	return nil
+}
+
+func (s *Service) finalizePayment(ctx context.Context, pi *PaymentIntent, procResp *ProcessorResponse) error {
 	respBytes, _ := json.Marshal(procResp)
 
 	if !procResp.Success {
@@ -177,6 +334,51 @@ func (s *Service) ProcessPayment(ctx context.Context, pi *PaymentIntent) error {
 	return nil
 }
 
+func (s *Service) HandleWalletCallback(ctx context.Context, paymentID string, status string, providerRef string) error {
+	pi, err := s.repo.GetPaymentIntent(ctx, paymentID, "")
+	if err != nil {
+		return fmt.Errorf("get payment intent: %w", err)
+	}
+
+	if pi.Status != StatusWalletInitiated {
+		return fmt.Errorf("payment is not in wallet_initiated state (current: %s)", pi.Status)
+	}
+
+	if status == "cancel" {
+		pi.Status = StatusCanceled
+		if err := s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusCanceled); err != nil {
+			return fmt.Errorf("update to canceled: %w", err)
+		}
+		return nil
+	}
+
+	if err := s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusProcessing); err != nil {
+		return fmt.Errorf("update to processing: %w", err)
+	}
+	pi.Status = StatusProcessing
+
+	providerName := pi.WalletProvider
+	if providerName == "" {
+		providerName = "bkash"
+	}
+
+	provider, ok := s.walletProviders[providerName]
+	if !ok {
+		return fmt.Errorf("wallet provider %q not found", providerName)
+	}
+
+	procResp, err := provider.ExecutePayment(ctx, providerRef)
+	if err != nil {
+		pi.Status = StatusFailed
+		errMsg := err.Error()
+		pi.ErrorMessage = &errMsg
+		s.repo.UpdatePaymentIntentStatus(ctx, pi.ID, StatusFailed)
+		return fmt.Errorf("execute payment: %w", err)
+	}
+
+	return s.finalizePayment(ctx, pi, procResp)
+}
+
 func (s *Service) dispatchWebhook(ctx context.Context, merchantID, eventType string, data interface{}) {
 	if s.webhookSvc != nil {
 		s.webhookSvc.DispatchEvent(ctx, merchantID, eventType, data)
@@ -219,7 +421,7 @@ func (s *Service) CapturePayment(ctx context.Context, id, merchantID string, amo
 		return nil, err
 	}
 
-	if pi.Status != StatusAuthorized {
+	if !IsValidTransition(pi.Status, StatusCaptured) {
 		return nil, ErrPaymentNotCapturable
 	}
 
@@ -298,7 +500,7 @@ func (s *Service) RefundPayment(ctx context.Context, id, merchantID string, amou
 		return nil, err
 	}
 
-	if pi.Status != StatusCaptured && pi.Status != StatusSucceeded {
+	if !IsValidTransition(pi.Status, StatusRefunded) {
 		return nil, ErrPaymentNotRefundable
 	}
 
@@ -366,7 +568,7 @@ func (s *Service) VoidPayment(ctx context.Context, id, merchantID string, idempo
 		return nil, err
 	}
 
-	if pi.Status != StatusAuthorized && pi.Status != StatusPending {
+	if !IsValidTransition(pi.Status, StatusCanceled) {
 		return nil, ErrPaymentNotVoidable
 	}
 
