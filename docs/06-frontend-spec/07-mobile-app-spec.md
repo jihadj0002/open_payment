@@ -1,5 +1,7 @@
 # Mobile App Specification
 
+> **Status:** ❌ **TODO: Not implemented** — No mobile app exists yet. This doc is a spec/roadmap.
+
 ## Tech Stack
 - **Framework:** Flutter 3.x
 - **State Management:** Riverpod

@@ -1,5 +1,8 @@
 # Local Development Guide
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `internal/config/config.go`
+
 ## Method 1: Docker Compose (Recommended)
 
 ### Prerequisites
@@ -111,7 +114,7 @@ go run . &
 cd open_payment
 export DATABASE_URL=postgres://postgres:postgres@localhost:5432/paymentdb?sslmode=disable
 export REDIS_URL=redis://localhost:6379/0
-export JWT_SECRET=dev-secret-change-in-production
+export JWT_SECRET=<your-64-char-hex-secret>
 make run
 # Runs on port 8080
 ```

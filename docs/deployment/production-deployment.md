@@ -1,5 +1,8 @@
 # Production Deployment Guide
 
+> **Status:** ✅ Updated 2026-07-16
+> **Note:** Current deployment uses **Railway** (not AWS EKS). The AWS/Terraform/K8s documentation below is aspirational.
+
 ## Architecture (AWS)
 
 ```

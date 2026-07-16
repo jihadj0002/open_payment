@@ -1,5 +1,7 @@
 # Admin Dashboard
 
+> **Status:** ❌ **TODO: Not implemented** — No admin dashboard frontend exists yet. This doc is a spec/roadmap.
+
 ## Layout
 
 ```

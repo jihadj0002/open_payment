@@ -1,5 +1,8 @@
 # Indexing and Partitioning
 
+> **Status:** ✅ Updated 2026-07-16
+> **Note:** Partitioning is **not yet implemented**. The current schema uses regular tables with indexes. Partitioning (by time for `payment_intents`, `transactions`, `ledger_entries`, `audit_logs`) is planned for high-volume production use.
+
 ## Partitioning Strategy
 
 ### Partition by Time (payment_intents, transactions, refunds, ledger_entries)

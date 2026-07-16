@@ -1,35 +1,45 @@
 # Error Handling
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `internal/api/errors.go`, `internal/api/middleware/requestid.go`
+
 ## Error Taxonomy
 
-| Error Type | HTTP Status | Description |
-|------------|-------------|-------------|
-| `invalid_request_error` | 400 | Malformed request, missing fields, validation failures |
-| `authentication_error` | 401 | Invalid or missing API key / JWT |
-| `permission_error` | 403 | API key or user lacks required permissions |
-| `not_found_error` | 404 | Requested resource doesn't exist |
-| `conflict_error` | 409 | Idempotency conflict, resource state conflict |
-| `rate_limit_error` | 429 | Too many requests |
-| `api_error` | 500 | Unexpected server error |
+> **Note:** The actual error types are defined in `internal/api/errors.go`. Some documented types below are planned but not yet implemented.
+
+| Error Type | HTTP Status | Description | Status |
+|------------|-------------|-------------|--------|
+| `validation_error` | 400 | Malformed request, missing fields, validation failures | ✅ Implemented |
+| `auth_error` | 401 | Invalid or missing API key / JWT | ✅ Implemented |
+| `not_found` | 404 | Requested resource doesn't exist | ✅ Implemented |
+| `rate_limit_error` | 429 | Too many requests | ✅ Implemented |
+| `invalid_request_error` | 400 | Legacy error type (being deprecated) | ⚠️ Partial |
+| `authentication_error` | 401 | Deprecated — use `auth_error` | ⚠️ Spec only |
+| `permission_error` | 403 | API key or user lacks required permissions | ⚠️ Spec only |
+| `conflict_error` | 409 | Idempotency conflict, resource state conflict | ⚠️ Spec only |
+| `api_error` | 500 | Unexpected server error | ⚠️ Spec only |
 
 ## Error Response Format
 
 ```json
 {
   "error": {
-    "type": "invalid_request_error",
-    "code": "missing_required_field",
+    "type": "validation_error",
+    "code": "validation_failed",
     "message": "The field 'amount' is required",
-    "param": "amount",
     "status": 400,
-    "details": {
-      "field": "amount",
-      "reason": "required"
-    }
+    "details": [
+      {
+        "field": "amount",
+        "message": "required"
+      }
+    ]
   },
   "request_id": "req_abc123"
 }
 ```
+
+> `request_id` is set via `chimw.RequestID` middleware and propagated through the request context.
 
 ## Error Codes Reference
 

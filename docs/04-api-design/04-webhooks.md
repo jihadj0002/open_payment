@@ -1,9 +1,14 @@
 # Webhooks
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `internal/service/webhook/models.go`, `internal/service/webhook/routes.go`, `internal/service/webhook/service.go`
+
 ## Overview
 Webhooks notify merchants of asynchronous events (payment success, failure, refunds, etc.). The gateway sends HTTP POST requests to the merchant's configured endpoint with a signed JSON payload.
 
 ## Webhook Events
+
+> **Validated events** (from `internal/service/webhook/models.go`): Only 5 events are currently validated by the system. Additional events listed below are planned.
 
 ### payment.success
 Sent when a payment is successfully captured (or automatically captured after authorization).
@@ -57,10 +62,10 @@ Sent when a payment authorization fails.
 }
 ```
 
-### payment.pending
+### payment.pending ✅
 Sent when a payment requires additional action (3DS, redirect).
 
-### refund.completed
+### refund.completed ✅
 Sent when a refund is successfully processed.
 
 ```json
@@ -83,9 +88,11 @@ Sent when a refund is successfully processed.
 ```
 
 ### refund.failed
+> **TODO: Not implemented** — Event constant not yet defined in `models.go`.
+
 Sent when a refund cannot be processed.
 
-### chargeback.created
+### chargeback.created ✅
 Sent when a chargeback is initiated by the cardholder's bank.
 
 ```json
@@ -108,12 +115,18 @@ Sent when a chargeback is initiated by the cardholder's bank.
 ```
 
 ### chargeback.resolved
+> **TODO: Not implemented**
+
 Sent when a chargeback is resolved (won or lost).
 
 ### settlement.completed
+> **TODO: Not implemented**
+
 Sent when a settlement batch completes and merchant balance is updated.
 
 ### payout.sent
+> **TODO: Not implemented**
+
 Sent when a payout is initiated to the merchant's bank account.
 
 ## Webhook Signature Verification
@@ -186,12 +199,41 @@ func VerifyWebhook(secret []byte, payload []byte, timestamp string, signature st
 | 2 | 5 seconds | 5s |
 | 3 | 30 seconds | 35s |
 | 4 | 5 minutes | 5m 35s |
-| 5 | 30 minutes | 35m 35s |
-| Max | — | 35m 35s |
+| Max | — | 5m 35s |
 
+- **Max 5 total attempts** (initial + 4 retries, enforced by `max_attempts` column in `webhook_deliveries`)
 - If all retries fail, the webhook is marked as `failed` in the dashboard
-- Merchants can manually replay failed webhooks from the dashboard
-- Webhooks that fail repeatedly may be auto-disabled with a notification to the merchant
+- Merchants can manually replay failed webhooks via `POST /v1/webhook_endpoints/{id}/events/{eventId}/replay`
+- Webhooks that fail repeatedly may be auto-disabled with a notification to the merchant (auto-disable after 10 consecutive failures)
+
+## Webhook Secret Rotation
+
+> **Code Ref:** `POST /v1/webhook_endpoints/{id}/rotate-secret`, migration 012
+
+Merchants can rotate their webhook signing secret:
+- Old secret is preserved as `previous_secret` for 24 hours (`previous_secret_expires_at`)
+- During the rotation window, both old and new signatures are accepted
+- The new secret is returned once in the response
+
+## Webhook Health Monitoring
+
+> **Code Ref:** `GET /v1/webhook_endpoints/{id}/health`
+
+Returns health metrics for a webhook endpoint:
+- Success rate (percentage of successful deliveries)
+- Total delivery attempts
+- Last success timestamp
+- Last failure timestamp
+- `is_active` flag (auto-disabled after 10 consecutive failures)
+
+## Webhook Event Replay
+
+> **Code Ref:** `POST /v1/webhook_endpoints/{id}/events/{eventId}/replay`
+
+Merchants can replay a specific webhook event:
+1. List event history via `GET /v1/webhook_endpoints/{id}/events`
+2. Replay a specific event via `POST /v1/webhook_endpoints/{id}/events/{eventId}/replay`
+3. The system re-fetches the original event data and re-dispatches it
 
 ## Merchant Response
 

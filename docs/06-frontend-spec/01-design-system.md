@@ -1,5 +1,8 @@
 # Design System
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `web/src/components/ui/`
+
 ## Tech Stack
 - **Framework:** Next.js 14+ (App Router)
 - **Language:** TypeScript (strict mode)
@@ -55,18 +58,20 @@ Based on Tailwind's default scale: `0, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8,
 
 ### Button Variants
 ```tsx
-<Button variant="primary" size="sm" loading disabled icon={<Icon />}>
+<Button variant="primary" size="sm" disabled>
   Pay Now
 </Button>
 ```
-| Variant | Use |
-|---------|-----|
-| primary | Primary actions (Pay, Save, Create) |
-| secondary | Alternative actions |
-| outline | Less emphasis actions |
-| danger | Destructive actions (Delete, Suspend) |
-| ghost | Minimal, in tables/lists |
-| link | Inline navigation |
+| Variant | Use | Status |
+|---------|-----|--------|
+| primary | Primary actions (Pay, Save, Create) | ✅ Implemented |
+| secondary | Alternative actions | ✅ Implemented |
+| outline | Less emphasis actions | ✅ Implemented |
+| danger | Destructive actions (Delete, Suspend) | ✅ Implemented |
+| ghost | Minimal, in tables/lists | ✅ Implemented |
+| link | Inline navigation | ✅ Implemented |
+
+> **Note:** Current `Button` component uses flat props (`variant`, `size`, `disabled`, `children`). `loading` and `icon` props are **TODO**.
 
 ### Status Badges
 ```tsx
@@ -90,15 +95,11 @@ Based on Tailwind's default scale: `0, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8,
 ```
 
 ### Card
+> **Note:** Current `Card` component uses flat props, not compound component pattern.
+
 ```tsx
 <Card>
-  <Card.Header>
-    <Card.Title>Recent Transactions</Card.Title>
-    <Card.Action><Button variant="ghost">View All</Button></Card.Action>
-  </Card.Header>
-  <Card.Content>
-    {/* table or content */}
-  </Card.Content>
+  {/* content */}
 </Card>
 ```
 
@@ -114,6 +115,8 @@ Based on Tailwind's default scale: `0, 0.25, 0.5, 1, 1.5, 2, 2.5, 3, 4, 5, 6, 8,
 ```
 
 ### Modal/Dialog
+> **Note:** Current `Modal` component uses flat props, not compound component pattern.
+
 ```tsx
 <Modal open={isOpen} onClose={closeModal}>
   <Modal.Header>Confirm Refund</Modal.Header>

@@ -1,5 +1,8 @@
 # Admin REST API Specification
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `internal/service/admin/routes.go`
+
 ## Authentication
 All admin endpoints require JWT authentication with `admin` role.
 Headers: `Authorization: Bearer <jwt_token>`
@@ -37,8 +40,6 @@ Query parameters:
 }
 ```
 
-### POST /v1/admin/merchants — Create Merchant (Admin)
-
 ### PATCH /v1/admin/merchants/:id — Update Merchant
 
 ### POST /v1/admin/merchants/:id/approve — Approve Merchant
@@ -55,9 +56,23 @@ Query parameters:
 
 ### POST /v1/admin/merchants/:id/terminate — Terminate Merchant
 
+### POST /v1/admin/merchants/:id/reset-api-keys — Reset Merchant API Keys
+
+Regenerates API keys for a merchant. Their existing keys are revoked and new keys generated.
+
+### GET /v1/admin/merchants/:id/stats — Get Merchant Stats
+
+Returns aggregated usage statistics for a specific merchant (daily/weekly/monthly).
+
+### POST /v1/admin/merchants — Create Merchant (Admin)
+
+> **TODO: Not implemented** — Planned for future release.
+
 ### GET /v1/admin/merchants/:id/kyc — Get KYC Documents
 
-**Response:**
+> **TODO: Not implemented** — KYC document management endpoints pending.
+
+**Response (spec):**
 ```json
 {
   "documents": [
@@ -74,7 +89,11 @@ Query parameters:
 
 ### POST /v1/admin/merchants/:id/kyc/approve — Approve KYC
 
+> **TODO: Not implemented**
+
 ### POST /v1/admin/merchants/:id/kyc/reject — Reject KYC
+
+> **TODO: Not implemented**
 
 ## Transactions
 
@@ -91,9 +110,15 @@ Query parameters:
 
 ## Settlements
 
-### GET /v1/admin/settlements — List Settlements
+> **Note:** Settlements are managed via `GET /v1/settlements` and `POST /v1/settlements` (merchant-facing). Admin-specific settlement endpoints are not yet separated.
 
-### POST /v1/admin/settlements/trigger — Manually Trigger Settlement
+## SLA Monitoring
+
+### GET /v1/admin/sla — Get SLA Metrics
+
+Returns p50/p95/p99 latency, availability, and error rate metrics.
+
+> **Code Ref:** TASK-PROD-P2-009 — SLA Service implemented.
 
 ## Disputes
 

@@ -1,5 +1,8 @@
 # Merchant REST API Specification
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `internal/service/merchant/routes.go`, `internal/service/payment/routes.go`, `internal/service/auth/routes.go`, `internal/service/customer/routes.go`, `internal/service/ledger/routes.go`, `internal/service/webhook/routes.go`, `internal/service/settlement/routes.go`, `internal/service/fraud/routes.go`, `internal/service/admin/routes.go`
+
 ## Payments
 
 ### POST /v1/payments — Create Payment Intent
@@ -135,16 +138,17 @@ Voids an uncaptured authorization.
 
 ### POST /v1/payments/:id/cancel — Cancel Payment
 
-Cancels a payment that hasn't been captured yet.
+> **Note:** Use `POST /v1/payments/{id}/void` instead. Cancel is not implemented separately.
 
 ## Refunds
 
-### POST /v1/refunds — Create Refund
+> **Note:** Refunds are not a separate resource. Use `POST /v1/payments/{id}/refund` to refund a captured payment.
+
+### POST /v1/payments/{id}/refund — Refund Payment
 
 **Request:**
 ```json
 {
-  "payment_id": "pi_abc123",
   "amount": 500,
   "reason": "customer_request",
   "metadata": {
@@ -153,97 +157,82 @@ Cancels a payment that hasn't been captured yet.
 }
 ```
 
-**Response (201 Created):**
-```json
-{
-  "id": "re_abc123",
-  "object": "refund",
-  "amount": 500,
-  "currency": "BDT",
-  "payment_id": "pi_abc123",
-  "status": "succeeded",
-  "reason": "customer_request",
-  "metadata": { "return_reference": "RET-001" },
-  "created": 1735689600
-}
-```
+**Response (200 OK):** Returns the updated Payment Intent.
 
-### GET /v1/refunds/:id — Retrieve Refund
+## Auth Endpoints
 
-### GET /v1/refunds — List Refunds
+> **Code Ref:** `internal/service/auth/routes.go`
+
+### POST /v1/auth/login — Login
+
+**Request:** `{"email": "...", "password": "..."}`
+
+**Response:** JWT access token + merchant profile.
+
+### POST /v1/auth/register — Register Merchant
+
+**Request:** `{"name": "...", "email": "...", "password": "..."}`
+
+**Response:** JWT access token + merchant profile + API keys (`secret_key`, `public_key`).
+
+### POST /v1/auth/refresh — Refresh Token
+
+**Request:** `{"refresh_token": "..."}`
+
+**Response:** New access + refresh tokens.
+
+### POST /v1/auth/forgot-password — Forgot Password
+
+**Request:** `{"email": "..."}`
+
+**Response:** 200 OK (email sent if account exists).
+
+### POST /v1/auth/reset-password — Reset Password
+
+**Request:** `{"token": "...", "password": "..."}`
+
+**Response:** 200 OK (password updated).
+
+### GET /v1/auth/me — Current User
+
+**Response:** Merchant profile data.
 
 ## Customers
 
-### POST /v1/customers — Create Customer
+> **Code Ref:** `internal/service/customer/routes.go`
 
-**Request:**
-```json
-{
-  "email": "customer@example.com",
-  "name": "John Doe",
-  "phone": "+8801700000000",
-  "metadata": {
-    "internal_id": "USR-001"
-  }
-}
-```
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/customers` | Create customer |
+| GET | `/v1/customers` | List customers |
+| GET | `/v1/customers/{id}` | Get customer |
+| PATCH | `/v1/customers/{id}` | Update customer |
+| POST | `/v1/customers/{id}/payment_methods` | Attach payment method |
+| GET | `/v1/customers/{id}/payment_methods` | List saved payment methods |
+| DELETE | `/v1/customers/{id}/payment_methods/{pm_id}` | Detach payment method |
 
-**Response (201 Created):**
-```json
-{
-  "id": "cus_abc123",
-  "object": "customer",
-  "email": "customer@example.com",
-  "name": "John Doe",
-  "phone": "+8801700000000",
-  "metadata": { "internal_id": "USR-001" },
-  "created": 1735689600
-}
-```
+## Balance / Ledger
 
-### POST /v1/customers/:id/payment_methods — Attach Payment Method
+> **Code Ref:** `internal/service/ledger/routes.go`
 
-**Request:**
-```json
-{
-  "payment_method": "card",
-  "payment_method_data": {
-    "card": {
-      "number": "4111111111111111",
-      "exp_month": 12,
-      "exp_year": 2027,
-      "cvc": "123"
-    }
-  },
-  "set_as_default": true
-}
-```
-
-### GET /v1/customers/:id/payment_methods — List Saved Methods
-
-## Balance
-
-### GET /v1/balance — Retrieve Balance
-
-**Response:**
-```json
-{
-  "object": "balance",
-  "available": [
-    { "amount": 150000, "currency": "BDT" }
-  ],
-  "pending": [
-    { "amount": 25000, "currency": "BDT" }
-  ],
-  "reserve": [
-    { "amount": 5000, "currency": "BDT" }
-  ]
-}
-```
-
-### GET /v1/balance/transactions — List Balance Transactions
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/balance` | Retrieve merchant balance |
+| GET | `/v1/balance/transactions` | List balance transactions |
 
 ## Webhook Endpoints
+
+> **Code Ref:** `internal/service/webhook/routes.go`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/webhook_endpoints` | Create webhook endpoint |
+| GET | `/v1/webhook_endpoints` | List webhook endpoints |
+| DELETE | `/v1/webhook_endpoints/{id}` | Delete webhook endpoint |
+| POST | `/v1/webhook_endpoints/{id}/rotate-secret` | Rotate webhook signing secret |
+| GET | `/v1/webhook_endpoints/{id}/events` | List event delivery history |
+| POST | `/v1/webhook_endpoints/{id}/events/{eventId}/replay` | Replay a webhook event |
+| GET | `/v1/webhook_endpoints/{id}/health` | Webhook endpoint health status |
 
 ### POST /v1/webhook_endpoints — Create Webhook Endpoint
 
@@ -260,11 +249,9 @@ Cancels a payment that hasn't been captured yet.
 }
 ```
 
-### GET /v1/webhook_endpoints — List Webhook Endpoints
-
-### DELETE /v1/webhook_endpoints/:id — Delete Webhook Endpoint
-
 ## Tokens
+
+> **TODO: Not implemented** — Planned for v1.1.
 
 ### POST /v1/tokens — Create Token (Card)
 
@@ -299,6 +286,8 @@ Use publishable key for this endpoint.
 
 ## Subscriptions (v1.1+)
 
+> **TODO: Not implemented** — Planned for v1.1.
+
 ### POST /v1/subscriptions — Create Subscription
 
 **Request:**
@@ -317,3 +306,57 @@ Use publishable key for this endpoint.
   "trial_period_days": 14
 }
 ```
+
+## Merchant Profile & API Keys
+
+> **Code Ref:** `internal/service/merchant/routes.go`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/merchants/profile` | Get merchant profile |
+| PATCH | `/v1/merchants/profile` | Update merchant profile |
+| GET | `/v1/merchants/api_keys` | List API keys |
+| POST | `/v1/merchants/api_keys` | Create API key |
+| DELETE | `/v1/merchants/api_keys/{id}` | Revoke API key |
+
+## Settlements
+
+> **Code Ref:** `internal/service/settlement/routes.go`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| POST | `/v1/settlements` | Trigger settlement |
+| GET | `/v1/settlements` | List settlements |
+| GET | `/v1/settlements/{id}` | Get settlement details |
+| GET | `/v1/settlements/report` | Settlement report with filters |
+
+## Fraud Detection
+
+> **Code Ref:** `internal/service/fraud/routes.go`, `internal/service/admin/routes.go`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/merchants/fraud_config` | Get fraud detection config |
+| PUT | `/v1/merchants/fraud_config` | Update fraud detection config |
+| GET | `/v1/merchants/fraud/rules` | List fraud rules |
+| POST | `/v1/merchants/fraud/rules` | Create fraud rule |
+| PATCH | `/v1/merchants/fraud/rules/{id}` | Update fraud rule |
+| DELETE | `/v1/merchants/fraud/rules/{id}` | Delete fraud rule |
+
+## Merchant Onboarding
+
+> **Code Ref:** `internal/service/admin/routes.go`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/merchants/onboarding/status` | Get onboarding status |
+| POST | `/v1/merchants/onboarding` | Submit onboarding data |
+| POST | `/v1/merchants/onboarding/documents` | Upload onboarding document |
+
+## Merchant Stats
+
+> **Code Ref:** `internal/service/admin/routes.go`
+
+| Method | Endpoint | Description |
+|--------|----------|-------------|
+| GET | `/v1/merchants/{id}/stats` | Get merchant usage stats |

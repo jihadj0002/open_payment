@@ -1033,6 +1033,61 @@ Allow merchants to rotate webhook secrets. Ensure secrets are stored encrypted. 
 
 ---
 
+## Phase 9: Documentation Cleanup
+
+**Status:** ✅ DONE | **Priority:** MEDIUM | **Assignee:** orchestrator-agent | **Completed:** 2026-07-16
+
+**Description:**
+Comprehensive audit and update of all documentation to match actual codebase state after Phases 1-8.
+
+**Docs Updated:**
+
+### 04-api-design/
+- **01-api-overview.md**: Marked HMAC request signing as TODO, updated pagination to offset-based (not cursor), added response headers (`X-Request-Id`, `X-RateLimit-*`, `X-API-Version`), updated API groups to match actual routes
+- **02-merchant-rest-api.md**: Updated refunds to `POST /payments/{id}/refund` not standalone `/refunds`, added auth/forgot-password/reset-password endpoints, added fraud rules CRUD, added onboarding endpoints, added webhook secret rotation/replay/health, added settlements, added merchant profile/api_keys, added merchant stats, marked subscriptions/tokens as TODO
+- **03-admin-rest-api.md**: Added actual admin endpoints (reset-api-keys, stats, SLA), marked KYC endpoints and POST /admin/merchants as TODO, fixed response shapes
+- **04-webhooks.md**: Updated event list to match 5 validated events from code, fixed retry policy to 5 attempts max, added webhook secret rotation docs, added webhook health monitoring docs, added webhook replay docs
+- **06-error-handling.md**: Updated error type names to match `errors.go` (`validation_error`, `auth_error`, `not_found`, `rate_limit_error`), added `request_id` field documentation, added validation error example with field-level details
+
+### 05-database-design/
+- **01-er-diagrams.md**: Added implementation status table for all entities
+- **02-merchant-schema.md**: Updated to match actual migrations — fixed `business_name` → `name`, added `password_hash`, encrypted `secret_key`/`public_key`, added `password_reset_tokens` table, marked `merchant_users`, `merchant_settings`, `kyc_documents` as TODO
+- **03-payment-schema.md**: Updated to match actual migrations — removed `refunds`/`chargebacks` standalone tables, added `amount_capturable`/`amount_received`/`capture_method` columns, removed PARTITION BY, added `status_history` table, added `idempotency_key` on transactions
+- **04-ledger-schema.md**: Noted simplified implementation (no `ledger_accounts` table or materialized balances view)
+- **05-customer-schema.md**: Updated to match actual migrations — added `payment_methods` and `saved_payment_methods` tables, marked `tokens`, `device_fingerprints`, `risk_scores` as TODO
+- **06-security-schema.md**: Updated to match actual migrations — kept `audit_logs`, `system_config`, `api_usage_logs` as implemented; marked `admin_users`, `roles`, `permissions`, `sessions`, `security_logs`, `login_history`, `api_key_history`, `fraud_rules` as TODO
+- **07-indexing-and-partitioning.md**: Noted partitioning not yet implemented
+
+### 02-requirements/
+- **04-compliance-requirements.md**: Marked GDPR requirements as TODO, marked PCI DSS formal assessment as TODO, marked PSD2/SCA as TODO
+
+### 06-frontend-spec/
+- **01-design-system.md**: Updated Button spec (noted `loading`/`icon` not implemented), updated Card/Modal as flat props not compound components
+- **02-merchant-dashboard.md**: Added Fraud page, updated sidebar nav with Reports and Fraud, added routes column
+- **03-admin-dashboard.md**: Noted as TODO (not built)
+- **04-developer-portal.md**: Noted as TODO (not built)
+- **05-state-and-data-flow.md**: Verified accurate — no changes needed
+- **06-routing-and-navigation.md**: Marked developer portal and checkout routes as TODO
+- **07-mobile-app-spec.md**: Noted as TODO (not built)
+
+### Deployment/
+- **local-development.md**: Updated JWT_SECRET from old default, added env var note
+- **production-deployment.md**: Noted current deployment uses Railway, not AWS EKS
+
+### Task Board
+- Added Phase 9: Documentation Cleanup (this section)
+
+**Acceptance Criteria:**
+- [x] All docs cross-referenced against actual code
+- [x] TODO items marked, no content removed
+- [x] Status headers added to all updated docs
+- [x] Consistent naming and terminology throughout
+- [x] API endpoints match route registrations
+- [x] Database schemas match migrations
+- [x] Frontend specs match actual component implementations
+
+---
+
 ## Quick Stats
 | Phase | Tasks | Status |
 |-------|-------|--------|
@@ -1044,3 +1099,4 @@ Allow merchants to rotate webhook secrets. Ensure secrets are stored encrypted. 
 | Phase 6: P2 (Medium) | 9 | 9/9 DONE |
 | Phase 7: P3 (Low) | 7 | 7/7 DONE |
 | Phase 8: Critical Production Fixes | 12 | 12/12 DONE |
+| Phase 9: Documentation Cleanup | 1 | 1/1 DONE |

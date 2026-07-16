@@ -1,5 +1,8 @@
 # API Overview
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `internal/api/router.go`, `internal/service/*/routes.go`
+
 ## Base URLs
 
 | Environment | Base URL |
@@ -34,6 +37,8 @@ Header: Authorization: Bearer <jwt_token>
 - JWT contains: `{ merchant_id, user_id, role, permissions }`
 
 ### HMAC Request Signing (Optional, recommended)
+> **TODO: Not implemented** — This is a planned feature for v1.1.
+
 ```
 Header: X-Signature: <hex-encoded HMAC-SHA256>
 Header: X-Timestamp: <unix_timestamp_ms>
@@ -50,27 +55,25 @@ Header: X-Nonce: <random_uuid>
 | `Authorization` | Yes | Bearer token or API key |
 | `Content-Type` | Yes | `application/json` |
 | `Idempotency-Key` | For write ops | UUID v4, unique per request |
-| `X-Signature` | Optional | HMAC signature |
-| `X-Timestamp` | With signature | Unix timestamp in ms |
-| `X-Nonce` | With signature | Unique request identifier |
+| `X-Signature` | TODO v1.1 | HMAC signature (not implemented) |
+| `X-Timestamp` | TODO v1.1 | Unix timestamp in ms (not implemented) |
+| `X-Nonce` | TODO v1.1 | Unique request identifier (not implemented) |
 | `Accept-Language` | No | `en`, `bn` for localization |
+
+### Response Headers
+
+| Header | Description |
+|--------|-------------|
+| `X-Request-Id` | Unique request identifier (via `chimw.RequestID`) |
+| `X-RateLimit-Limit` | Rate limit ceiling for the current endpoint |
+| `X-RateLimit-Remaining` | Number of requests remaining in the current window |
+| `X-API-Version` | API version (`1`) |
 
 ## Pagination
 
-### Cursor-based pagination (default)
-```
-GET /v1/transactions?cursor=txn_abc123&limit=50
-```
-Response:
-```json
-{
-  "data": [...],
-  "has_more": true,
-  "next_cursor": "txn_xyz789"
-}
-```
+> **Note:** Currently uses **offset-based pagination** (`page`/`per_page`). Cursor-based pagination is planned for v1.1.
 
-### Offset-based pagination (for dashboards)
+### Offset-based pagination (current)
 ```
 GET /v1/transactions?page=1&per_page=25
 ```
@@ -82,6 +85,19 @@ Response:
   "page": 1,
   "per_page": 25,
   "total_pages": 42
+}
+```
+
+### Cursor-based pagination (planned for v1.1)
+```
+GET /v1/transactions?cursor=txn_abc123&limit=50
+```
+Response:
+```json
+{
+  "data": [...],
+  "has_more": true,
+  "next_cursor": "txn_xyz789"
 }
 ```
 
@@ -132,11 +148,14 @@ Retry-After: 30
 
 | Group | Base Path | Auth | Description |
 |-------|-----------|------|-------------|
-| Payments | `/v1/payments` | Secret key | Create, capture, refund, void |
-| Customers | `/v1/customers` | Secret key | Customer profiles, saved methods |
-| Subscriptions | `/v1/subscriptions` | Secret key | Recurring billing |
-| Balance | `/v1/balance` | Secret key | View balance, transactions |
-| Webhooks | `/v1/webhooks` | Secret key | Configure webhook endpoints |
-| Tokens | `/v1/tokens` | Publishable key | Card tokenization |
-| Admin | `/v1/admin` | JWT (admin role) | Merchant management, system config |
-| Auth | `/v1/auth` | None | Login, MFA, token refresh |
+| Auth | `/v1/auth` | None | Login, register, refresh, forgot/reset password |
+| Payments | `/v1/payments` | Bearer JWT | Create, list, get, capture, refund, void |
+| Customers | `/v1/customers` | Bearer JWT | Customer profiles, saved payment methods |
+| Balance / Ledger | `/v1/balance` | Bearer JWT | View balance, transactions |
+| Webhook Endpoints | `/v1/webhook_endpoints` | Bearer JWT | Configure webhook endpoints, logs, replay |
+| Settlements | `/v1/settlements` | Bearer JWT | Trigger/List/Get settlements, reports |
+| Merchant | `/v1/merchants` | Bearer JWT | Profile, API keys, onboarding, fraud rules |
+| Admin | `/v1/admin` | Bearer JWT + Admin role | Merchant management, system config, disputes |
+| Fraud Config | `/v1/merchants/fraud_config` | Bearer JWT | Fraud detection settings |
+| Subscriptions | `/v1/subscriptions` | Secret key | **TODO: Not implemented** |
+| Tokens | `/v1/tokens` | Publishable key | **TODO: Not implemented** |

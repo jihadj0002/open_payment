@@ -1,5 +1,7 @@
 # Developer Portal
 
+> **Status:** ❌ **TODO: Not implemented** — No developer portal frontend exists yet. This doc is a spec/roadmap.
+
 ## Layout
 Similar to Merchant Dashboard but with Developer-focused navigation:
 

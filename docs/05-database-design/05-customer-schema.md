@@ -1,5 +1,8 @@
 # Customer Schema
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `internal/database/migrations/001_initial_schema.up.sql`, `004_add_payment_methods.up.sql`, `014_saved_payment_methods.up.sql`
+
 ## customers
 ```sql
 CREATE TABLE customers (

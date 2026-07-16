@@ -1,5 +1,10 @@
 # Ledger Schema
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `internal/database/migrations/001_initial_schema.up.sql`
+
+> **Note:** The actual implementation uses a simplified ledger model. The full double-entry accounting model with `ledger_accounts` table, materialized `balances` view, and account types is **not yet implemented**. The current `ledger_entries` table records all balance-affecting events.
+
 ## Core Principle: Double-Entry Accounting
 
 Every financial movement creates **two ledger entries**: a debit from one account and a credit to another. The sum of all debits must always equal the sum of all credits. No account balances are directly updated — they are always calculated as `SUM(credits) - SUM(debits)`.

@@ -1,5 +1,9 @@
 # Merchant Dashboard
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `web/src/app/(dashboard)/merchant/`
+> **Note:** All pages listed below are **implemented** (see Phase 1-3 of task board).
+
 ## Layout Structure
 
 ```
@@ -82,13 +86,18 @@
 - **Test Webhook:** Button to send a test event
 - **Replay:** Retry failed webhooks
 
-### 9. Reports
+### 9. Fraud Detection
+- **Fraud Rules List:** DataTable with rules, enable/disable toggle per rule
+- **Create/Edit Rule:** Modal form with rule type, conditions, action
+- **Delete Rule:** Confirmation modal
+
+### 10. Reports
 - **Revenue Report:** Daily/weekly/monthly/date range with chart + table
 - **Transaction Report:** All transactions filtered by date range, downloadable as CSV
 - **Settlement Report:** Settlement batches with amounts, fees, net
 - **Export:** CSV, PDF generation
 
-### 10. Settings
+### 11. Settings
 - **Profile:** Business name, email, phone, address
 - **Users:** Team members list, invite user, role management
 - **Bank Accounts:** Add/update payout bank details
@@ -97,17 +106,18 @@
 
 ## Navigation & Permissions
 
-| Nav Item | Owner | Admin | Developer | Analyst | Member |
-|----------|-------|-------|-----------|---------|--------|
-| Overview | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Payments | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Refunds | ✅ | ✅ | ✅ | ✅ | - |
-| Customers | ✅ | ✅ | ✅ | ✅ | ✅ |
-| Balance | ✅ | ✅ | - | ✅ | - |
-| API Keys | ✅ | ✅ | ✅ | - | - |
-| Webhooks | ✅ | ✅ | ✅ | - | - |
-| Reports | ✅ | ✅ | - | ✅ | - |
-| Settings | ✅ | ✅ | - | - | - |
+| Nav Item | Owner | Admin | Developer | Analyst | Member | Route |
+|----------|-------|-------|-----------|---------|--------|-------|
+| Overview | ✅ | ✅ | ✅ | ✅ | ✅ | `/merchant/dashboard` |
+| Payments | ✅ | ✅ | ✅ | ✅ | ✅ | `/merchant/payments` |
+| Refunds | ✅ | ✅ | ✅ | ✅ | - | `/merchant/payments/refunds` |
+| Customers | ✅ | ✅ | ✅ | ✅ | ✅ | `/merchant/customers` |
+| Balance | ✅ | ✅ | - | ✅ | - | `/merchant/balance` |
+| API Keys | ✅ | ✅ | ✅ | - | - | `/merchant/api-keys` |
+| Webhooks | ✅ | ✅ | ✅ | - | - | `/merchant/webhooks` |
+| Reports | ✅ | ✅ | - | ✅ | - | `/merchant/reports` |
+| Fraud | ✅ | ✅ | ✅ | ✅ | - | `/merchant/fraud` |
+| Settings | ✅ | ✅ | - | - | - | `/merchant/settings` |
 
 ## State Handling Per Page
 

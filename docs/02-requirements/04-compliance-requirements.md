@@ -1,6 +1,11 @@
 # Compliance Requirements
 
+> **Status:** ✅ Updated 2026-07-16
+> **Implementation Status:** ⚠️ Most compliance requirements are **planned/design-stage** and not yet fully implemented.
+
 ## PCI DSS (Payment Card Industry Data Security Standard)
+
+> **⚠️ Partial Implementation** — Basic PCI DSS controls are in place (tokenization, encryption, TLS), but formal SAQ D assessment and full compliance validation are **TODO**.
 
 ### Scope
 All systems that store, process, or transmit cardholder data are in scope.
@@ -32,30 +37,34 @@ All systems that store, process, or transmit cardholder data are in scope.
 
 ## PSD2 / Strong Customer Authentication (SCA)
 
+> **⚠️ TODO: Not implemented** — PSD2/SCA requirements are documented as design targets. 3D Secure 2.0 integration not yet implemented.
+
 ### Requirements
 - Two-factor authentication for electronic payments > €30
 - Exemptions: low-value (<€30), recurring (same amount same merchant), trusted beneficiaries, corporate payments
 - Dynamic linking: amount and payee linked to authentication
 
 ### Implementation
-- Integrate 3D Secure 2.0 (EMV 3DS) for card transactions
-- Support exemption requests with proper reason codes
-- Maintain authentication data for audit (3 years)
+- **TODO** — Integrate 3D Secure 2.0 (EMV 3DS) for card transactions
+- **TODO** — Support exemption requests with proper reason codes
+- **TODO** — Maintain authentication data for audit (3 years)
 
 ## GDPR (General Data Protection Regulation)
+
+> **⚠️ TODO: Not implemented** — GDPR compliance requirements are documented as design targets but not yet implemented in code.
 
 | Requirement | Implementation |
 |-------------|---------------|
 | Lawful basis for processing | Contractual necessity (payment processing) |
-| Consent management | Record consent for marketing, data sharing |
+| Consent management | **TODO** — Record consent for marketing, data sharing |
 | Data minimization | Only collect data needed for payment |
-| Right to access | API for merchants to export customer data |
-| Right to erasure | Delete customer data within 30 days of request |
-| Data portability | Export customer data in JSON/CSV |
-| Breach notification | Notify DPA within 72 hours |
-| DPO appointment | Designate Data Protection Officer |
-| Data retention | Financial data: 7 years; non-financial: 2 years after last activity |
-| Cross-border transfer | Standard Contractual Clauses for data leaving Bangladesh |
+| Right to access | **TODO** — API for merchants to export customer data |
+| Right to erasure | **TODO** — Delete customer data within 30 days of request |
+| Data portability | **TODO** — Export customer data in JSON/CSV |
+| Breach notification | **TODO** — Notify DPA within 72 hours |
+| DPO appointment | **TODO** — Designate Data Protection Officer |
+| Data retention | **TODO** — Financial data: 7 years; non-financial: 2 years after last activity |
+| Cross-border transfer | **TODO** — Standard Contractual Clauses for data leaving Bangladesh |
 
 ## AML / KYC (Anti-Money Laundering / Know Your Customer)
 

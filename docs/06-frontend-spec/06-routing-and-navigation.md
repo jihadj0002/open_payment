@@ -1,5 +1,8 @@
 # Routing and Navigation
 
+> **Status:** ✅ Updated 2026-07-16
+> **Code Ref:** `web/src/app/` directory structure
+
 ## Next.js App Router Structure
 
 ```
@@ -83,7 +86,7 @@ app/
 │       └── logs/
 │           └── page.tsx
 │
-├── checkout/
+├── checkout/                          (TODO: Not implemented)
 │   └── [payment_intent_client_secret]/
 │       └── page.tsx                  (Hosted checkout page)
 │

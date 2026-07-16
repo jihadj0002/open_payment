@@ -1,5 +1,8 @@
 # Entity Relationship Diagrams
 
+> **Status:** ✅ Updated 2026-07-16
+> **Note:** These ER diagrams represent the **target architecture**. Some entities shown are **not yet migrated** — see individual schema docs for implementation status.
+
 ## Core Domain
 
 ```
@@ -160,12 +163,52 @@
 ```
 
 ## Key Relationships Summary
-- Merchant 1:N → MerchantUser, APIKey, WebhookConfig, FeeConfig, Customer, PaymentIntent
-- Customer 1:N → PaymentIntent, SavedCard
-- PaymentIntent 1:N → Transaction, Refund
-- PaymentIntent 1:1 → Dispute (optional)
-- LedgerAccount 1:N → LedgerEntry
-- Merchant 1:N → SettlementBatch 1:N → SettlementLine
-- SettlementBatch 1:1 → PayoutBatch (optional)
-- AdminUser 1:N → AuditLog
-- PaymentIntent 1:N → FraudEvent
+- Merchant 1:N → MerchantUser (**TODO**), APIKey ✅, Webhook ✅, FeeConfig ✅, Customer ✅, PaymentIntent ✅
+- Customer 1:N → PaymentIntent ✅, SavedPaymentMethod ✅
+- PaymentIntent 1:N → Transaction ✅, StatusHistory ✅
+- PaymentIntent 1:1 → Dispute ✅ (optional)
+- LedgerAccount 1:N → LedgerEntry ⚠️ (simplified — no LedgerAccount table)
+- Merchant 1:N → SettlementBatch 1:N → SettlementLine (**TODO** — single settlements table)
+- SettlementBatch 1:1 → PayoutBatch (**TODO**)
+- AdminUser 1:N → AuditLog (**TODO** — admin_users not implemented)
+- PaymentIntent 1:N → FraudCheck ✅ | FraudEvent (**TODO**)
+
+## Entity Implementation Status
+| Entity | Status | Migration |
+|--------|--------|-----------|
+| Merchant | ✅ | 001 |
+| Customer | ✅ | 001 |
+| PaymentIntent | ✅ | 001 |
+| Transaction | ✅ | 001 |
+| APIKey | ✅ | 001 |
+| Webhook | ✅ | 001 |
+| WebhookDelivery | ✅ | 001 |
+| LedgerEntry | ✅ | 001 |
+| PaymentMethod | ✅ | 004 |
+| FraudCheck | ✅ | 005 |
+| FraudConfig | ✅ | 005 |
+| Settlement | ✅ | 006 |
+| FeeConfig | ✅ | 007 |
+| SystemConfig | ✅ | 007 |
+| AuditLog | ✅ | 007 |
+| Dispute | ✅ | 009 |
+| StatusHistory | ✅ | 011 |
+| ApiUsageLog | ✅ | 013 |
+| SavedPaymentMethod | ✅ | 014 |
+| PasswordResetToken | ✅ | 016 |
+| MerchantUser | ❌ TODO | — |
+| MerchantSettings | ❌ TODO | — |
+| KycDocument | ❌ TODO | — |
+| AdminUser | ❌ TODO | — |
+| Session | ❌ TODO | — |
+| Role/Permission | ❌ TODO | — |
+| SecurityLog | ❌ TODO | — |
+| LoginHistory | ❌ TODO | — |
+| FraudRule | ❌ TODO | — |
+| Refund (standalone) | ❌ TODO (uses transactions) | — |
+| Chargeback (standalone) | ❌ TODO (uses disputes) | — |
+| SettlementBatch/Line | ❌ TODO | — |
+| PayoutBatch | ❌ TODO | — |
+| Token | ❌ TODO | — |
+| DeviceFingerprint | ❌ TODO | — |
+| RiskScore | ❌ TODO | — |
