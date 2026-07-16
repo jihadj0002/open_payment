@@ -1,7 +1,7 @@
 CREATE TABLE IF NOT EXISTS saved_payment_methods (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    customer_id VARCHAR(255) NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
-    merchant_id VARCHAR(255) NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    customer_id UUID NOT NULL REFERENCES customers(id) ON DELETE CASCADE,
+    merchant_id UUID NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
     type VARCHAR(50) NOT NULL CHECK (type IN ('card', 'wallet')),
     last4 VARCHAR(4) NOT NULL,
     brand VARCHAR(50) NOT NULL DEFAULT '',

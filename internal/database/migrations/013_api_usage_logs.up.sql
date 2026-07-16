@@ -1,6 +1,6 @@
 CREATE TABLE IF NOT EXISTS api_usage_logs (
     id UUID PRIMARY KEY DEFAULT gen_random_uuid(),
-    merchant_id VARCHAR(255) NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
+    merchant_id UUID NOT NULL REFERENCES merchants(id) ON DELETE CASCADE,
     endpoint VARCHAR(255) NOT NULL,
     method VARCHAR(10) NOT NULL,
     status_code INTEGER NOT NULL,

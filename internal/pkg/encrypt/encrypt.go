@@ -29,8 +29,8 @@ func Init() error {
 		return fmt.Errorf("decode encryption key: %w", err)
 	}
 
-	if len(key) != 32 {
-		return fmt.Errorf("encryption key must be 32 bytes (64 hex chars), got %d bytes", len(key))
+	if len(key) != 16 && len(key) != 32 {
+		return fmt.Errorf("encryption key must be 16 bytes (32 hex chars) or 32 bytes (64 hex chars), got %d bytes", len(key))
 	}
 
 	masterKey = key
