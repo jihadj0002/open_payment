@@ -3,6 +3,8 @@ package api
 import (
 	"context"
 	"net/http"
+	"os"
+	"strings"
 	"time"
 
 	"github.com/go-chi/chi/v5"
@@ -19,7 +21,7 @@ import (
 
 type HealthChecker struct {
 	DB           *pgxpool.Pool
-	Redis        string
+	RedisClient  *redis.Client
 	Procs        []string
 	Uptime       time.Time
 	Version      string
@@ -30,7 +32,7 @@ type HealthChecker struct {
 func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
 	r := chi.NewRouter()
 
-	allowedOrigins := getAllowedOrigins(cfg.Environment)
+	allowedOrigins := getAllowedOrigins()
 
 	var rateLimiter middleware.Limiter
 	if cfg.RedisURL != "" {
@@ -52,6 +54,7 @@ func NewRouter(cfg *config.Config, hc *HealthChecker) *chi.Mux {
 		AllowedMethods:   []string{"GET", "POST", "PATCH", "DELETE", "OPTIONS"},
 		AllowedHeaders:   []string{"Authorization", "Content-Type", "Idempotency-Key", "X-Signature", "X-Timestamp", "X-Nonce"},
 		ExposedHeaders:   []string{"X-Request-Id", "X-RateLimit-Remaining", "X-API-Version"},
+		AllowCredentials: true,
 		MaxAge:           3600,
 	}))
 	r.Use(chimw.RequestID)
@@ -124,6 +127,15 @@ func readyHandler(hc *HealthChecker) http.HandlerFunc {
 			}
 		}
 
+		if hc.RedisClient != nil {
+			if err := hc.RedisClient.Ping(ctx).Err(); err != nil {
+				checks["redis"] = healthCheckResult{Status: "not_ready", Error: err.Error()}
+				overallStatus = "not_ready"
+			} else {
+				checks["redis"] = healthCheckResult{Status: "ready"}
+			}
+		}
+
 		httpStatus := http.StatusOK
 		if overallStatus != "ready" {
 			httpStatus = http.StatusServiceUnavailable
@@ -138,11 +150,14 @@ func readyHandler(hc *HealthChecker) http.HandlerFunc {
 	}
 }
 
-func getAllowedOrigins(env string) []string {
-	if env == "production" {
-		return []string{
-			"https://openpaymentweb-production.up.railway.app",
+func getAllowedOrigins() []string {
+	envOrigins := os.Getenv("CORS_ORIGINS")
+	if envOrigins != "" {
+		origins := strings.Split(envOrigins, ",")
+		for i := range origins {
+			origins[i] = strings.TrimSpace(origins[i])
 		}
+		return origins
 	}
 	return []string{
 		"http://localhost:3000",
@@ -181,11 +196,15 @@ func healthHandler(hc *HealthChecker) http.HandlerFunc {
 			}
 		}
 
-		if hc.Redis != "" {
-			checks["redis"] = healthCheckResult{Status: "unhealthy", Error: "redis not configured"}
-			overallStatus = "degraded"
+		if hc.RedisClient != nil {
+			if err := hc.RedisClient.Ping(ctx).Err(); err != nil {
+				checks["redis"] = healthCheckResult{Status: "unhealthy", Error: err.Error()}
+				overallStatus = "degraded"
+			} else {
+				checks["redis"] = healthCheckResult{Status: "ok"}
+			}
 		} else {
-			checks["redis"] = healthCheckResult{Status: "ok"}
+			checks["redis"] = healthCheckResult{Status: "not_configured"}
 		}
 
 		for _, proc := range hc.Procs {

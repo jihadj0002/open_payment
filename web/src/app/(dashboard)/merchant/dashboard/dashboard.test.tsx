@@ -11,10 +11,15 @@ const mockBalanceData = {
   currency: 'USD',
 }
 
-const mockPaymentsData = [
-  { id: 'p1', amount: 50, currency: 'USD', status: 'succeeded', payment_method: 'card', created_at: '2026-01-01T00:00:00Z' },
-  { id: 'p2', amount: 25, currency: 'USD', status: 'pending', payment_method: 'wallet', created_at: '2026-01-02T00:00:00Z' },
-]
+const mockPaymentsData = {
+  data: [
+    { id: 'p1', amount: 50, currency: 'USD', status: 'succeeded', payment_method: 'card', created_at: '2026-01-01T00:00:00Z' },
+    { id: 'p2', amount: 25, currency: 'USD', status: 'pending', payment_method: 'wallet', created_at: '2026-01-02T00:00:00Z' },
+  ],
+  total: 2,
+  limit: 5,
+  offset: 0,
+}
 
 function createWrapper() {
   const queryClient = new QueryClient({
@@ -81,7 +86,7 @@ describe('DashboardPage', () => {
       if (url.includes('/payments')) {
         return Promise.resolve({
           ok: true,
-          json: () => Promise.resolve({ data: [] }),
+          json: () => Promise.resolve({ data: { data: [], total: 0, limit: 5, offset: 0 } }),
         })
       }
       return Promise.resolve({ ok: true, json: () => Promise.resolve({}) })

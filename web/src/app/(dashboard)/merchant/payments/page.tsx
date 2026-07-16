@@ -20,10 +20,10 @@ interface Payment {
 }
 
 interface PaymentsResponse {
-  payments: Payment[]
+  data: Payment[]
   total: number
-  page: number
   limit: number
+  offset: number
 }
 
 export default function PaymentsPage() {
@@ -105,7 +105,7 @@ export default function PaymentsPage() {
 
       <DataTable<Payment>
         columns={columns}
-        data={data?.payments || []}
+        data={data?.data || []}
         loading={isLoading}
         emptyMessage="No payments yet. Try creating one."
         pagination={{

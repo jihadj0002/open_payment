@@ -80,7 +80,7 @@ func HandleListSettlements(svc *Service) http.HandlerFunc {
 			perPage = 20
 		}
 
-		settlements, err := svc.ListSettlements(r.Context(), claims.MerchantID, page, perPage)
+		settlements, total, err := svc.ListSettlements(r.Context(), claims.MerchantID, page, perPage)
 		if err != nil {
 			api.RespondError(w, http.StatusInternalServerError, "server_error", "internal_error", "an unexpected error occurred")
 			return
@@ -91,7 +91,7 @@ func HandleListSettlements(svc *Service) http.HandlerFunc {
 			data[i] = s
 		}
 
-		api.RespondJSON(w, http.StatusOK, data)
+		api.RespondPaginated(w, data, total, page, perPage)
 	}
 }
 

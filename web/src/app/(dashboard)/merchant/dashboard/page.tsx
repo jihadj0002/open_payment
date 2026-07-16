@@ -24,16 +24,25 @@ interface Payment {
   created_at: string
 }
 
+interface PaymentsListResponse {
+  data: Payment[]
+  total: number
+  limit: number
+  offset: number
+}
+
 export default function DashboardPage() {
   const { data: balance, isLoading: balanceLoading, error: balanceError } = useQuery({
     queryKey: queryKeys.balance.all,
     queryFn: () => api.get<Balance>('/balance').then(r => r.data),
   })
 
-  const { data: payments, isLoading: paymentsLoading } = useQuery({
+  const { data: paymentsData, isLoading: paymentsLoading } = useQuery({
     queryKey: queryKeys.payments.list({ limit: '5' }),
-    queryFn: () => api.get<Payment[]>('/payments?limit=5').then(r => r.data),
+    queryFn: () => api.get<PaymentsListResponse>('/payments?limit=5').then(r => r.data),
   })
+
+  const payments = paymentsData?.data
 
   const loading = balanceLoading || paymentsLoading
   const error = !!balanceError

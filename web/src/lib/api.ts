@@ -11,12 +11,97 @@ export interface APIError {
 
 const BASE_URL = process.env.NEXT_PUBLIC_API_URL || 'http://localhost:8080'
 
+let isRefreshing = false
+let refreshPromise: Promise<string | null> | null = null
+
+function decodeJWT(token: string): Record<string, unknown> | null {
+  try {
+    const payload = token.split('.')[1]
+    return JSON.parse(atob(payload))
+  } catch {
+    return null
+  }
+}
+
+function isTokenExpiringSoon(): boolean {
+  if (typeof window === 'undefined') return false
+  const token = localStorage.getItem('auth_token')
+  if (!token) return false
+  const decoded = decodeJWT(token)
+  if (!decoded || typeof decoded.exp !== 'number') return false
+  return decoded.exp * 1000 - Date.now() < 120000
+}
+
+async function refreshAccessToken(): Promise<string | null> {
+  if (typeof window === 'undefined') return null
+
+  if (isRefreshing && refreshPromise) {
+    return refreshPromise
+  }
+
+  const refreshToken = localStorage.getItem('auth_refresh_token')
+  if (!refreshToken) {
+    clearAuthAndRedirect()
+    return null
+  }
+
+  isRefreshing = true
+  refreshPromise = (async () => {
+    try {
+      const apiPath = '/v1/auth/refresh'
+      const response = await fetch(`${BASE_URL}${apiPath}`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ refresh_token: refreshToken }),
+      })
+
+      if (!response.ok) {
+        clearAuthAndRedirect()
+        return null
+      }
+
+      const result: APIResponse<{ access_token: string; refresh_token: string }> = await response.json()
+      const { access_token, refresh_token: newRefreshToken } = result.data
+
+      localStorage.setItem('auth_token', access_token)
+      if (newRefreshToken) {
+        localStorage.setItem('auth_refresh_token', newRefreshToken)
+      }
+      return access_token
+    } catch {
+      clearAuthAndRedirect()
+      return null
+    } finally {
+      isRefreshing = false
+      refreshPromise = null
+    }
+  })()
+
+  return refreshPromise
+}
+
+function clearAuthAndRedirect() {
+  if (typeof window === 'undefined') return
+  localStorage.removeItem('auth_token')
+  localStorage.removeItem('auth_refresh_token')
+  window.location.href = '/login'
+}
+
 async function request<T>(
   method: string,
   path: string,
   body?: unknown,
   timeoutMs = 30000
 ): Promise<APIResponse<T>> {
+  if (typeof window !== 'undefined') {
+    if (isTokenExpiringSoon()) {
+      const newToken = await refreshAccessToken()
+      if (newToken) {
+        return request<T>(method, path, body, timeoutMs)
+      }
+    }
+  }
+
   const token =
     typeof window !== 'undefined' ? localStorage.getItem('auth_token') : null
 
@@ -46,10 +131,25 @@ async function request<T>(
 
     if (!response.ok) {
       if (response.status === 401) {
-        localStorage.removeItem('auth_token')
-        if (typeof window !== 'undefined') {
-          window.location.href = '/login'
+        const newToken = await refreshAccessToken()
+        if (newToken) {
+          headers['Authorization'] = `Bearer ${newToken}`
+          const retryResponse = await fetch(`${BASE_URL}${apiPath}`, {
+            method,
+            headers,
+            body: body ? JSON.stringify(body) : undefined,
+            signal: controller.signal,
+          })
+          if (retryResponse.ok) {
+            return retryResponse.json()
+          }
         }
+        clearAuthAndRedirect()
+        throw {
+          error: 'AuthError',
+          message: 'Session expired. Please login again.',
+          statusCode: 401,
+        } satisfies APIError
       }
 
       if (response.status === 429) {

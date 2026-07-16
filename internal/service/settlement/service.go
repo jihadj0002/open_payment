@@ -75,9 +75,20 @@ func (s *Service) GetSettlement(ctx context.Context, id, merchantID string) (*Se
 	return settlement, nil
 }
 
-func (s *Service) ListSettlements(ctx context.Context, merchantID string, page, perPage int) ([]Settlement, error) {
+func (s *Service) ListSettlements(ctx context.Context, merchantID string, page, perPage int) ([]Settlement, int, error) {
 	offset := (page - 1) * perPage
-	return s.repo.ListSettlements(ctx, merchantID, perPage, offset)
+	settlements, err := s.repo.ListSettlements(ctx, merchantID, perPage, offset)
+	if err != nil {
+		return nil, 0, err
+	}
+	if settlements == nil {
+		settlements = []Settlement{}
+	}
+	total, err := s.repo.CountSettlements(ctx, merchantID)
+	if err != nil {
+		return nil, 0, err
+	}
+	return settlements, total, nil
 }
 
 func (s *Service) GetSettlementReport(ctx context.Context, merchantID, currency string, from, to time.Time) (*SettlementReport, error) {

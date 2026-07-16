@@ -59,9 +59,9 @@ export default function BalancePage() {
     queryFn: () => api.get<PaginatedResponse<Transaction>>(`/balance/transactions?page=${txPage}&per_page=20`).then(r => r.data),
   })
 
-  const { data: settlementResponse, isLoading: settlementLoading, error: settlementError } = useQuery({
+  const { data: settlementData, isLoading: settlementLoading, error: settlementError } = useQuery({
     queryKey: queryKeys.settlements.list({ page: String(settlementPage), per_page: '20' }),
-    queryFn: () => api.get<PaginatedResponse<Settlement>>(`/settlements?page=${settlementPage}&per_page=20`).then(r => r.data),
+    queryFn: () => api.get<Settlement[]>(`/settlements?page=${settlementPage}&per_page=20`).then(r => r.data),
   })
 
   useEffect(() => {
@@ -208,13 +208,13 @@ export default function BalancePage() {
         <h3 className="mb-4 text-lg font-semibold text-white">Settlement History</h3>
         <DataTable<Settlement>
           columns={settlementColumns}
-          data={settlementResponse?.data || []}
+          data={settlementData || []}
           loading={settlementLoading}
           emptyMessage="No settlements yet"
           pagination={{
             page: settlementPage,
             pageSize: 20,
-            total: settlementResponse?.total || 0,
+            total: settlementData?.length || 0,
             onPageChange: setSettlementPage,
           }}
         />

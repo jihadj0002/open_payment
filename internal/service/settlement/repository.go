@@ -185,6 +185,15 @@ func (r *Repository) GetSettlementTransactions(ctx context.Context, settlementID
 	return items, rows.Err()
 }
 
+func (r *Repository) CountSettlements(ctx context.Context, merchantID string) (int, error) {
+	var count int
+	err := r.Pool.QueryRow(ctx, `SELECT COUNT(*) FROM settlements WHERE merchant_id = $1`, merchantID).Scan(&count)
+	if err != nil {
+		return 0, fmt.Errorf("count settlements: %w", err)
+	}
+	return count, nil
+}
+
 func (r *Repository) UpdateSettlementStatus(ctx context.Context, id, status string) error {
 	now := time.Now()
 	query := `UPDATE settlements SET status = $1, completed_at = $2 WHERE id = $3`

@@ -49,9 +49,14 @@ type jwtCustomClaims struct {
 }
 
 type AuthService struct {
-	cfg     *config.Config
-	db      *pgxpool.Pool
-	auditor Auditor
+	cfg          *config.Config
+	db           *pgxpool.Pool
+	auditor      Auditor
+	emailSender  ResetTokenSender
+}
+
+type ResetTokenSender interface {
+	SendResetToken(to, token string) error
 }
 
 func NewAuthService(cfg *config.Config, db *pgxpool.Pool) *AuthService {
@@ -60,6 +65,11 @@ func NewAuthService(cfg *config.Config, db *pgxpool.Pool) *AuthService {
 
 func (s *AuthService) WithAuditor(auditor Auditor) *AuthService {
 	s.auditor = auditor
+	return s
+}
+
+func (s *AuthService) WithEmailSender(es ResetTokenSender) *AuthService {
+	s.emailSender = es
 	return s
 }
 
@@ -349,6 +359,17 @@ func (s *AuthService) ForgotPassword(ctx context.Context, email string) error {
 		if err != nil {
 			return fmt.Errorf("storing reset token: %w", err)
 		}
+	}
+
+	if s.emailSender != nil {
+		if err := s.emailSender.SendResetToken(email, rawToken); err != nil {
+			if s.cfg.Environment == "production" {
+				return fmt.Errorf("sending reset email: %w", err)
+			}
+			log.Warn().Err(err).Str("email", email).Msg("failed to send reset email (non-fatal in dev)")
+		}
+	} else {
+		log.Info().Str("email", email).Str("reset_token", rawToken).Msg("password reset token generated (no email sender configured)")
 	}
 
 	log.Info().Str("email", email).Msg("password reset token generation attempted")

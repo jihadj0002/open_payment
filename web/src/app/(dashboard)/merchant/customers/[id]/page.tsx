@@ -42,10 +42,10 @@ interface Payment {
 }
 
 interface PaymentsResponse {
-  payments: Payment[]
+  data: Payment[]
   total: number
-  page: number
   limit: number
+  offset: number
 }
 
 const editCustomerSchema = z.object({
@@ -76,7 +76,7 @@ export default function CustomerDetailPage() {
   })
 
   const customer = customerData?.data
-  const recentPayments = (paymentsData?.payments || []).filter(
+  const recentPayments = (paymentsData?.data || []).filter(
     (p) => p.customer_id === id
   )
 

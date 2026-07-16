@@ -9,6 +9,14 @@ import (
 	"github.com/joho/godotenv"
 )
 
+type SMTPConfig struct {
+	Host     string
+	Port     int
+	Username string
+	Password string
+	From     string
+}
+
 type Config struct {
 	Port             string
 	LogLevel         string
@@ -24,6 +32,8 @@ type Config struct {
 	DBMinConns       int
 	DBMaxLifetime    time.Duration
 	DBMaxIdleTime    time.Duration
+	SMTP             SMTPConfig
+	FrontendURL      string
 }
 
 func Load() *Config {
@@ -35,6 +45,8 @@ func Load() *Config {
 	godotenv.Load(fmt.Sprintf(".env.%s", env))
 	godotenv.Load(".env.local")
 	godotenv.Load()
+
+	smtpPort := getEnvInt("SMTP_PORT", 587)
 
 	return &Config{
 		Port:          getEnv("PORT", "8080"),
@@ -51,6 +63,14 @@ func Load() *Config {
 		DBMinConns:    getEnvInt("DATABASE_MIN_CONNS", 5),
 		DBMaxLifetime: getEnvDuration("DATABASE_MAX_LIFETIME", 30*time.Minute),
 		DBMaxIdleTime: getEnvDuration("DATABASE_MAX_IDLE_TIME", 5*time.Minute),
+		SMTP: SMTPConfig{
+			Host:     getEnv("SMTP_HOST", ""),
+			Port:     smtpPort,
+			Username: getEnv("SMTP_USERNAME", ""),
+			Password: getEnv("SMTP_PASSWORD", ""),
+			From:     getEnv("SMTP_FROM", "noreply@openpayment.gateway"),
+		},
+		FrontendURL: getEnv("FRONTEND_URL", "http://localhost:3000"),
 	}
 }
 

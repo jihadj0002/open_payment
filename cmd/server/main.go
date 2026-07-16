@@ -28,6 +28,7 @@ import (
 	"github.com/openpayment/gateway/internal/service/fraud"
 	"github.com/openpayment/gateway/internal/service/ledger"
 	"github.com/openpayment/gateway/internal/service/merchant"
+	"github.com/openpayment/gateway/internal/service/notification"
 	"github.com/openpayment/gateway/internal/service/payment"
 	"github.com/openpayment/gateway/internal/service/settlement"
 	"github.com/openpayment/gateway/internal/service/webhook"
@@ -72,7 +73,8 @@ func main() {
 	adminRepo := admin.NewRepository(db)
 	adminSvc := admin.NewService(adminRepo)
 
-	authSvc := auth.NewAuthService(cfg, db.Pool).WithAuditor(adminSvc)
+	emailSender := notification.NewEmailSender(cfg.SMTP, cfg.FrontendURL)
+	authSvc := auth.NewAuthService(cfg, db.Pool).WithAuditor(adminSvc).WithEmailSender(emailSender)
 	merchantRepo := merchant.NewRepository(db)
 	merchantSvc := merchant.NewService(merchantRepo)
 
@@ -161,25 +163,29 @@ func main() {
 		return ""
 	})
 
+	var redisClient *redis.Client
+	if cfg.RedisURL != "" {
+		opts, err := redis.ParseURL(cfg.RedisURL)
+		if err != nil {
+			log.Warn().Err(err).Msg("invalid REDIS_URL, falling back to in-memory rate limiter")
+		} else {
+			redisClient = redis.NewClient(opts)
+		}
+	}
+
 	hc := &api.HealthChecker{
-		DB:         db.Pool,
-		Uptime:     time.Now(),
-		Version:    "1.0.0",
-		APIUsageMW: apiUsageMW,
+		DB:          db.Pool,
+		RedisClient: redisClient,
+		Uptime:      time.Now(),
+		Version:     "1.0.0",
+		APIUsageMW:  apiUsageMW,
 	}
 
 	router := api.NewRouter(cfg, hc)
 
 	var authRateLimiter middleware.Limiter
-	if cfg.RedisURL != "" {
-		opts, err := redis.ParseURL(cfg.RedisURL)
-		if err != nil {
-			log.Warn().Err(err).Msg("invalid REDIS_URL, falling back to in-memory auth rate limiter")
-			authRateLimiter = middleware.NewMemoryRateLimiter(10, 20, time.Second)
-		} else {
-			rdb := redis.NewClient(opts)
-			authRateLimiter = middleware.NewRedisRateLimiter(rdb, 20, time.Second)
-		}
+	if redisClient != nil {
+		authRateLimiter = middleware.NewRedisRateLimiter(redisClient, 20, time.Second)
 	} else {
 		authRateLimiter = middleware.NewMemoryRateLimiter(10, 20, time.Second)
 	}
@@ -249,6 +255,14 @@ func main() {
 
 	if err := srv.Shutdown(shutdownCtx); err != nil {
 		log.Error().Err(err).Msg("server forced to shutdown")
+	}
+
+	if redisClient != nil {
+		if err := redisClient.Close(); err != nil {
+			log.Error().Err(err).Msg("failed to close Redis client")
+		} else {
+			log.Info().Msg("Redis client closed")
+		}
 	}
 
 	db.Close()

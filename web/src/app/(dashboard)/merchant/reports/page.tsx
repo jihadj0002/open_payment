@@ -65,19 +65,28 @@ export default function ReportsPage() {
     queryFn: () => api.get<Balance>('/balance').then(r => r.data),
   })
 
-  const { data: payments, isLoading: paymentsLoading, error: paymentsError } = useQuery({
+  interface PaymentsListResponse {
+    data: Payment[]
+    total: number
+    limit: number
+    offset: number
+  }
+
+  const { data: paymentsData, isLoading: paymentsLoading, error: paymentsError } = useQuery({
     queryKey: queryKeys.payments.list({ limit: '100' }),
-    queryFn: () => api.get<Payment[]>('/payments?limit=100').then(r => r.data),
+    queryFn: () => api.get<PaymentsListResponse>('/payments?limit=100').then(r => r.data),
   })
+
+  const payments = paymentsData?.data
 
   const { data: txResponse, isLoading: txLoading, error: txError } = useQuery({
     queryKey: queryKeys.balance.transactions({ page: String(txPage), per_page: '50' }),
     queryFn: () => api.get<PaginatedResponse<BalanceTransaction>>(`/balance/transactions?page=${txPage}&per_page=50`).then(r => r.data),
   })
 
-  const { data: settlementResponse, isLoading: settlementLoading, error: settlementError } = useQuery({
+  const { data: settlementData, isLoading: settlementLoading, error: settlementError } = useQuery({
     queryKey: queryKeys.settlements.list({ page: String(settlementPage), per_page: '50' }),
-    queryFn: () => api.get<PaginatedResponse<Settlement>>(`/settlements?page=${settlementPage}&per_page=50`).then(r => r.data),
+    queryFn: () => api.get<Settlement[]>(`/settlements?page=${settlementPage}&per_page=50`).then(r => r.data),
   })
 
   if (balanceError) toast.error('Failed to load balance data')
@@ -286,13 +295,13 @@ export default function ReportsPage() {
         {activeTab === 'settlements' && (
           <DataTable<Settlement>
             columns={settlementColumns}
-            data={settlementResponse?.data || []}
+            data={settlementData || []}
             loading={settlementLoading}
             emptyMessage="No settlements found"
             pagination={{
               page: settlementPage,
               pageSize: 50,
-              total: settlementResponse?.total || 0,
+              total: settlementData?.length || 0,
               onPageChange: setSettlementPage,
             }}
           />

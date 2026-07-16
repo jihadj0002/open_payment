@@ -4,6 +4,7 @@ import (
 	"context"
 	"embed"
 	"fmt"
+	"os"
 	"sort"
 	"strings"
 
@@ -48,6 +49,11 @@ func RunMigrations(db *PostgresDB) error {
 			return fmt.Errorf("checking migration %s: %w", f, err)
 		}
 		if applied {
+			continue
+		}
+
+		if strings.Contains(f, "seed") && os.Getenv("ENVIRONMENT") == "production" {
+			log.Warn().Str("migration", f).Msg("skipping seed data migration in production")
 			continue
 		}
 

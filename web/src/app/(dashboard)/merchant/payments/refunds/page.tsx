@@ -34,6 +34,13 @@ interface PaymentDetail {
   metadata: Record<string, string>
 }
 
+interface PaymentsListResponse {
+  data: Payment[]
+  total: number
+  limit: number
+  offset: number
+}
+
 const formatCurrency = (amount: number, currency = 'USD') =>
   new Intl.NumberFormat('en-US', { style: 'currency', currency }).format(amount)
 
@@ -55,12 +62,12 @@ export default function RefundsPage() {
   const [fetchedPayment, setFetchedPayment] = useState<PaymentDetail | null>(null)
   const [fetching, setFetching] = useState(false)
 
-  const { data, isLoading, error } = useQuery({
+  const { data: paymentsResponse, isLoading, error } = useQuery({
     queryKey: queryKeys.payments.list({ limit: '100' }),
-    queryFn: () => api.get<Payment[]>(`/payments?limit=100`).then(r => r.data),
+    queryFn: () => api.get<PaymentsListResponse>(`/payments?limit=100`).then(r => r.data),
   })
 
-  const refundedPayments = (data || []).filter(
+  const refundedPayments = (paymentsResponse?.data || []).filter(
     (p) => p.status === 'refunded' || p.status === 'partially_refunded'
   )
 

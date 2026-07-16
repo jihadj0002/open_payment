@@ -15,14 +15,6 @@ Creates a payment intent for authorization and capture.
   "amount": 1000,
   "currency": "BDT",
   "payment_method": "card",
-  "payment_method_data": {
-    "card": {
-      "number": "4111111111111111",
-      "exp_month": 12,
-      "exp_year": 2027,
-      "cvc": "123"
-    }
-  },
   "customer_id": "cus_abc123",
   "description": "Order #1234",
   "metadata": {
@@ -38,29 +30,21 @@ Creates a payment intent for authorization and capture.
 ```json
 {
   "id": "pi_abc123",
-  "object": "payment_intent",
   "amount": 1000,
   "amount_capturable": 1000,
   "amount_received": 0,
   "currency": "BDT",
   "status": "requires_capture",
+  "capture_method": "automatic",
   "customer_id": "cus_abc123",
   "description": "Order #1234",
   "metadata": {
     "order_id": "ORD-1234"
   },
-  "capture_method": "automatic",
   "payment_method": "card",
-  "payment_method_details": {
-    "card": {
-      "last4": "1111",
-      "brand": "visa",
-      "exp_month": 12,
-      "exp_year": 2027
-    }
-  },
-  "created": 1735689600,
-  "client_secret": "pi_abc123_secret_xyz789"
+  "client_secret": "pi_abc123_secret_xyz789",
+  "created_at": "2026-07-16T00:00:00Z",
+  "updated_at": "2026-07-16T00:00:00Z"
 }
 ```
 
@@ -71,7 +55,6 @@ Creates a payment intent for authorization and capture.
 | amount | integer | Yes | Amount in smallest currency unit (paise/satangs) |
 | currency | string | Yes | ISO 4217 currency code (BDT, USD, etc.) |
 | payment_method | string | Yes | `card`, `wallet`, `bank_transfer` |
-| payment_method_data | object | Conditional | Required if no saved payment method |
 | customer_id | string | No | Reference to saved customer |
 | description | string | No | Max 255 characters |
 | metadata | object | No | Key-value pairs (max 20 keys) |
@@ -86,7 +69,6 @@ Creates a payment intent for authorization and capture.
 ```json
 {
   "id": "pi_abc123",
-  "object": "payment_intent",
   "amount": 1000,
   "currency": "BDT",
   "status": "succeeded",
@@ -94,18 +76,9 @@ Creates a payment intent for authorization and capture.
   "description": "Order #1234",
   "metadata": { "order_id": "ORD-1234" },
   "payment_method": "card",
-  "payment_method_details": {
-    "card": { "last4": "1111", "brand": "visa" }
-  },
-  "charges": {
-    "data": [{
-      "id": "ch_abc123",
-      "amount": 1000,
-      "status": "succeeded",
-      "created": 1735689600
-    }]
-  },
-  "created": 1735689600
+  "client_secret": "pi_abc123_secret_xyz789",
+  "created_at": "2026-07-16T00:00:00Z",
+  "updated_at": "2026-07-16T00:00:00Z"
 }
 ```
 
@@ -240,14 +213,12 @@ Voids an uncaptured authorization.
 ```json
 {
   "url": "https://example.com/webhook",
-  "enabled_events": [
-    "payment.success",
-    "payment.failed",
-    "refund.completed"
-  ],
+  "event": "payment.success",
   "description": "Production webhook"
 }
 ```
+
+> **Note:** Single `event` string per webhook. To subscribe to multiple events, create multiple webhook endpoints.
 
 ## Tokens
 

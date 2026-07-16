@@ -44,18 +44,22 @@ export const useAuthStore = create<AuthState>()(
       isLoading: false,
 
       login: async (email: string, password: string) => {
-        const res = await api.post<{ token_pair: { access_token: string }; user: User }>('/auth/login', { email, password })
+        const res = await api.post<{ token_pair: { access_token: string; refresh_token: string }; user: User }>('/auth/login', { email, password })
         const token = res.data.token_pair.access_token
+        const refreshToken = res.data.token_pair.refresh_token
         localStorage.setItem('auth_token', token)
+        localStorage.setItem('auth_refresh_token', refreshToken)
         setCookie('auth_token', token)
         setSessionCookie('just_logged_in', '1')
         set({ user: res.data.user, token, isAuthenticated: true })
       },
 
       register: async (name: string, email: string, password: string) => {
-        const res = await api.post<{ token_pair: { access_token: string }; user: User }>('/auth/register', { name, email, password })
+        const res = await api.post<{ token_pair: { access_token: string; refresh_token: string }; user: User }>('/auth/register', { name, email, password })
         const token = res.data.token_pair.access_token
+        const refreshToken = res.data.token_pair.refresh_token
         localStorage.setItem('auth_token', token)
+        localStorage.setItem('auth_refresh_token', refreshToken)
         setCookie('auth_token', token)
         setSessionCookie('just_logged_in', '1')
         set({ user: res.data.user, token, isAuthenticated: true })
@@ -63,6 +67,7 @@ export const useAuthStore = create<AuthState>()(
 
       logout: () => {
         localStorage.removeItem('auth_token')
+        localStorage.removeItem('auth_refresh_token')
         removeCookie('auth_token')
         set({ user: null, token: null, isAuthenticated: false })
       },
